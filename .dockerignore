@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/.git
+**/*.log
+**/*.map
+artifacts/mockup-sandbox
+.local
+attached_assets
+scripts
+lib/api-client-react
+lib/api-spec
