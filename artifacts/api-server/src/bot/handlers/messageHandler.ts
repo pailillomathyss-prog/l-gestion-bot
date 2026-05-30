@@ -2,6 +2,7 @@ import { Message } from "discord.js";
 import { logger } from "../../lib/logger";
 import { banCommand } from "../commands/ban";
 import { debanCommand } from "../commands/deban";
+import { lockCommand, unlockCommand } from "../commands/lock";
 import { clearCommand } from "../commands/clear";
 import { giveawayCommand } from "../commands/giveaway";
 import { setupCommand } from "../commands/setup";
@@ -31,6 +32,12 @@ export async function handleMessage(message: Message) {
 
   try {
     switch (command) {
+      case "lock":
+        await lockCommand(message, args);
+        break;
+      case "unlock":
+        await unlockCommand(message, args);
+        break;
       case "deban":
         await debanCommand(message, args);
         break;
