@@ -1,6 +1,7 @@
 import { Message } from "discord.js";
 import { logger } from "../../lib/logger";
 import { banCommand } from "../commands/ban";
+import { debanCommand } from "../commands/deban";
 import { clearCommand } from "../commands/clear";
 import { giveawayCommand } from "../commands/giveaway";
 import { setupCommand } from "../commands/setup";
@@ -30,6 +31,9 @@ export async function handleMessage(message: Message) {
 
   try {
     switch (command) {
+      case "deban":
+        await debanCommand(message, args);
+        break;
       case "ban":
         await banCommand(message, args);
         break;
