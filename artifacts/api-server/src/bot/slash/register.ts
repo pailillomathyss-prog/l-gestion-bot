@@ -84,7 +84,16 @@ const commands = [
   new SlashCommandBuilder()
     .setName("help")
     .setDescription("Afficher la liste des commandes"),
-].map((c) => c.toJSON());
+
+    new SlashCommandBuilder()
+      .setName("deban")
+      .setDescription("Débannir un utilisateur par son ID")
+      .addStringOption((o) =>
+        o.setName("id").setDescription("ID de l'utilisateur banni").setRequired(true)
+      )
+      .addStringOption((o) => o.setName("raison").setDescription("Raison du déban").setRequired(false)),
+
+  ].map((c) => c.toJSON());
 
 export async function registerSlashCommands(token: string, clientId: string) {
   const rest = new REST().setToken(token);
