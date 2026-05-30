@@ -86,6 +86,20 @@ const commands = [
     .setDescription("Afficher la liste des commandes"),
 
     new SlashCommandBuilder()
+      .setName("lock")
+      .setDescription("Verrouiller un salon")
+      .addChannelOption((o) => o.setName("salon").setDescription("Salon à verrouiller (défaut: salon actuel)").setRequired(false))
+      .addStringOption((o) => o.setName("raison").setDescription("Raison").setRequired(false)),
+
+    new SlashCommandBuilder()
+      .setName("unlock")
+      .setDescription("Déverrouiller un salon")
+      .addChannelOption((o) => o.setName("salon").setDescription("Salon à déverrouiller (défaut: salon actuel)").setRequired(false))
+      .addStringOption((o) => o.setName("raison").setDescription("Raison").setRequired(false)),
+
+  
+
+    new SlashCommandBuilder()
       .setName("deban")
       .setDescription("Débannir un utilisateur par son ID")
       .addStringOption((o) =>
