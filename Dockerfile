@@ -1,7 +1,7 @@
 FROM node:20-alpine
 WORKDIR /app
 
-RUN npm install -g pnpm@10
+RUN corepack enable && corepack prepare pnpm@10 --activate
 
 COPY package.json pnpm-workspace.yaml.docker tsconfig.base.json tsconfig.json ./
 RUN mv pnpm-workspace.yaml.docker pnpm-workspace.yaml
