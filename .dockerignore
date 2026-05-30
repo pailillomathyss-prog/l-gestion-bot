@@ -5,7 +5,3 @@ artifacts/mockup-sandbox
 .local
 attached_assets
 scripts
-lib
-artifacts/api-server/src
-artifacts/api-server/build.mjs
-pnpm-workspace.yaml.docker
