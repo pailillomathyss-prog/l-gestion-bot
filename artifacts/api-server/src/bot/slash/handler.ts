@@ -239,6 +239,49 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
     }
 
 
+  
+      case "lock": {
+        if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+          return interaction.reply({ content: "❌ Tu n'as pas la permission de verrouiller des salons.", ephemeral: true });
+        }
+        const target = (interaction.options.getChannel("salon") ?? interaction.channel) as TextChannel;
+        const reason = interaction.options.getString("raison") ?? "Aucune raison fournie";
+        await interaction.deferReply();
+        try {
+          await target.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false }, { reason: `${interaction.user.tag}: ${reason}` });
+          await interaction.editReply({ embeds: [
+            new EmbedBuilder().setColor(0xff0000).setTitle("🔒 Salon verrouillé")
+              .addFields(
+                { name: "Salon", value: `<#${target.id}>` },
+                { name: "Raison", value: reason },
+                { name: "Modérateur", value: interaction.user.tag }
+              ).setTimestamp()
+          ]});
+        } catch { await interaction.editReply({ content: "❌ Une erreur est survenue." }); }
+        break;
+      }
+
+      case "unlock": {
+        if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+          return interaction.reply({ content: "❌ Tu n'as pas la permission de déverrouiller des salons.", ephemeral: true });
+        }
+        const target = (interaction.options.getChannel("salon") ?? interaction.channel) as TextChannel;
+        const reason = interaction.options.getString("raison") ?? "Aucune raison fournie";
+        await interaction.deferReply();
+        try {
+          await target.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null }, { reason: `${interaction.user.tag}: ${reason}` });
+          await interaction.editReply({ embeds: [
+            new EmbedBuilder().setColor(0x57f287).setTitle("🔓 Salon déverrouillé")
+              .addFields(
+                { name: "Salon", value: `<#${target.id}>` },
+                { name: "Raison", value: reason },
+                { name: "Modérateur", value: interaction.user.tag }
+              ).setTimestamp()
+          ]});
+        } catch { await interaction.editReply({ content: "❌ Une erreur est survenue." }); }
+        break;
+      }
+
       case "deban": {
         if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
           return interaction.reply({ content: "❌ Tu n'as pas la permission de débannir.", ephemeral: true });
