@@ -9,6 +9,12 @@ onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
 
+catalog:
+  '@types/node': ^25.3.3
+  drizzle-orm: ^0.45.2
+  zod: ^3.25.76
+  tsx: ^4.21.0
+
 overrides:
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
