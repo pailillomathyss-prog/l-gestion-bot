@@ -151,3 +151,30 @@ export async function logAntiLink(
     ],
   }).catch((e) => logger.warn({ e }, "Impossible d'envoyer le log anti-link"));
 }
+
+  export async function logUnban(
+    guild: Guild,
+    user: User,
+    moderator: User,
+    reason: string
+  ) {
+    const channelId = getLogsChannelId(guild.id);
+    if (!channelId) return;
+    const channel = guild.channels.cache.get(channelId);
+    if (!channel?.isTextBased()) return;
+    await channel.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle("✅ Membre débanni")
+          .addFields(
+            { name: "Utilisateur", value: `${user.tag} (${user.id})` },
+            { name: "Raison", value: reason },
+            { name: "Modérateur", value: moderator.tag }
+          )
+          .setThumbnail(user.displayAvatarURL())
+          .setTimestamp(),
+      ],
+    }).catch(() => {});
+  }
+  
