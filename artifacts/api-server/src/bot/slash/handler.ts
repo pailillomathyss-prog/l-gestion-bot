@@ -6,7 +6,7 @@ import {
   TextChannel,
 } from "discord.js";
 import { giveaways, GiveawayData } from "../index";
-import { logBan, logMute, logUnmute, logClear } from "../modules/modLogs";
+import { logBan, logMute, logUnmute, logClear, logUnban } from "../modules/modLogs";
 import { endGiveaway } from "../commands/giveaway";
 import { setupCommand } from "../commands/setup";
 import { deleteSetupCommand } from "../commands/deleteSetup";
@@ -238,7 +238,40 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
       break;
     }
 
-    case "help": {
+
+      case "deban": {
+        if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
+          return interaction.reply({ content: "❌ Tu n'as pas la permission de débannir.", ephemeral: true });
+        }
+        const userId = interaction.options.getString("id", true);
+        if (!/^\d{17,19}$/.test(userId)) {
+          return interaction.reply({ content: "❌ ID invalide.", ephemeral: true });
+        }
+        const reason = interaction.options.getString("raison") ?? "Aucune raison fournie";
+        await interaction.deferReply();
+        try {
+          const bans = await guild.bans.fetch();
+          const banned = bans.get(userId);
+          if (!banned) return interaction.editReply({ content: "❌ Cet utilisateur n'est pas banni." });
+          await guild.members.unban(userId, `${interaction.user.tag}: ${reason}`);
+          await logUnban(guild, banned.user, interaction.user, reason);
+          await interaction.editReply({
+            embeds: [
+              new EmbedBuilder().setColor(0x57f287).setTitle("✅ Membre débanni")
+                .addFields(
+                  { name: "Utilisateur", value: `${banned.user.tag} (${userId})` },
+                  { name: "Raison", value: reason },
+                  { name: "Modérateur", value: interaction.user.tag }
+                ).setThumbnail(banned.user.displayAvatarURL()).setTimestamp(),
+            ],
+          });
+        } catch {
+          await interaction.editReply({ content: "❌ Une erreur est survenue lors du débannissement." });
+        }
+        break;
+      }
+
+      case "help": {
       await interaction.reply({
         ephemeral: true,
         embeds: [
