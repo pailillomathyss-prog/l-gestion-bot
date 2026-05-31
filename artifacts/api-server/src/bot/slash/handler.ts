@@ -174,7 +174,7 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
         const embed = new EmbedBuilder()
           .setColor(0xffd700).setTitle("🎉 GIVEAWAY 🎉")
           .setDescription(
-            `Réagis avec 🎉 pour participer !\n\n**Prix:** ${prize}\n**Gagnant(s):** ${winners}\n**Fin:** <t:${Math.floor(endsAt / 1000)}:R>\n**Organisé par:** ${interaction.user}`
+`Réagis avec 🎉 pour participer !\n\n**Prix:** ${prize}\n**Gagnant(s):** ${winners}\n**Fin:** <t:${Math.floor(endsAt / 1000)}:R>${invitesRequired ? "\n**Invitations requises:** " + invitesRequired : ""}\n**Organisé par:** ${interaction.user}`
           )
           .setFooter({ text: `Se termine dans ${formatDuration(duration)}` })
           .setTimestamp(endsAt);
