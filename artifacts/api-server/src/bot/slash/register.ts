@@ -81,6 +81,12 @@ import {
       ),
 
     new SlashCommandBuilder()
+      .setName("invites")
+      .setDescription("Voir les invitations du serveur ou d'un utilisateur")
+      .setDefaultMemberPermissions(ADMIN)
+      .addUserOption((o) => o.setName("utilisateur").setDescription("Voir les invitations d'un utilisateur").setRequired(false)),
+
+    new SlashCommandBuilder()
       .setName("setup")
       .setDescription("Créer toute la structure du serveur (catégories + salons)")
       .setDefaultMemberPermissions(ADMIN),
