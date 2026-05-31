@@ -4,6 +4,7 @@ import { logger } from "../../lib/logger";
 import { banCommand } from "../commands/ban";
 import { debanCommand } from "../commands/deban";
 import { lockCommand, unlockCommand } from "../commands/lock";
+import { invitesCommand } from "../commands/invites";
 import { clearCommand } from "../commands/clear";
 import { giveawayCommand } from "../commands/giveaway";
 import { setupCommand } from "../commands/setup";
@@ -70,6 +71,9 @@ export async function handleMessage(message: Message) {
       case "unmute":
       case "demute":
         await unmuteCommand(message, args);
+        break;
+      case "invites":
+        await invitesCommand(message, args);
         break;
       case "help":
         await helpCommand(message);
