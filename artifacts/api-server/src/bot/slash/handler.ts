@@ -191,6 +191,7 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
           endsAt,
           ended: false,
           participants: new Set(),
+          invitesRequired: invitesRequired ?? undefined,
         };
         giveaways.set(gwMsg.id, gwData);
         setTimeout(() => endGiveaway(gwMsg.id), duration);
