@@ -28,7 +28,7 @@ import {
         o.setName("membre").setDescription("Membre a muter").setRequired(true)
       )
       .addStringOption((o) =>
-        o.setName("duree").setDescription("Duree: 10s, 5m, 2h, 1d").setRequired(true)
+        o.setName("durée").setDescription("Durée: 10s, 5m, 2h, 1d").setRequired(true)
       )
       .addStringOption((o) =>
         o.setName("raison").setDescription("Raison du mute").setRequired(false)
@@ -108,7 +108,7 @@ import {
           .setName("start")
           .setDescription("Lancer un giveaway")
           .addStringOption((o) =>
-            o.setName("duree").setDescription("Duree: 10s, 5m, 2h, 1d").setRequired(true)
+            o.setName("durée").setDescription("Durée: 10s, 5m, 2h, 1d").setRequired(true)
           )
           .addIntegerOption((o) =>
             o.setName("gagnants").setDescription("Nombre de gagnants").setMinValue(1).setRequired(true)
