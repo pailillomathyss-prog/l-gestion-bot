@@ -1,4 +1,5 @@
-import { Message } from "discord.js";
+import { Message,
+  PermissionFlagsBits} from "discord.js";
 import { logger } from "../../lib/logger";
 import { banCommand } from "../commands/ban";
 import { debanCommand } from "../commands/deban";
@@ -31,6 +32,11 @@ export async function handleMessage(message: Message) {
   if (!command) return;
 
   try {
+    // 🔒 Seuls les administrateurs peuvent utiliser les commandes du bot
+    if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+      return;
+    }
+
     switch (command) {
       case "lock":
         await lockCommand(message, args);
