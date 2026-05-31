@@ -1,4 +1,5 @@
 import { Message, EmbedBuilder, PermissionFlagsBits, TextChannel } from "discord.js";
+import { getUserInviteCount } from "./invites";
 import { giveaways, GiveawayData } from "../index";
 
 function parseDuration(str: string): number {
@@ -31,6 +32,12 @@ export async function giveawayCommand(message: Message, args: string[]) {
   if (sub === "start") {
     const durationStr = args[1];
     const winners = parseInt(args[2] ?? "1");
+    // Extraire invites:X des args
+    const inviteArgIdx = args.findIndex((a) => /^invites:\d+$/i.test(a));
+    let invitesRequired: number | undefined;
+    if (inviteArgIdx >= 3) {
+      invitesRequired = parseInt(args.splice(inviteArgIdx, 1)[0].split(":")[1]);
+    }
     const prize = args.slice(3).join(" ");
 
     if (!durationStr || isNaN(winners) || !prize) {
@@ -66,6 +73,7 @@ export async function giveawayCommand(message: Message, args: string[]) {
       endsAt,
       ended: false,
       participants: new Set(),
+      invitesRequired,
     };
 
     giveaways.set(gwMessage.id, gwData);
@@ -104,7 +112,23 @@ export async function endGiveaway(messageId: string, triggerMessage?: Message) {
 
   const reaction = gwMsg.reactions.cache.get("🎉");
   const users = await reaction?.users.fetch().catch(() => null);
-  const eligible = users?.filter((u) => !u.bot).map((u) => u.id) ?? [];
+  const rawEligible = users?.filter((u) => !u.bot).map((u) => u.id) ?? [];
+  let eligible = rawEligible;
+  if (gw.invitesRequired) {
+    const gwChannel = client.channels.cache.get(gw.channelId) as TextChannel | null;
+    const guildId = gwChannel?.guild?.id ?? '';
+    const counts = await Promise.all(
+      rawEligible.map(async (uid) => ({ uid, count: await getUserInviteCount(guildId, uid) }))
+    );
+    eligible = counts.filter((e) => e.count >= gw.invitesRequired!).map((e) => e.uid);
+    if (!eligible.length) {
+      const noWinEmbed = new EmbedBuilder().setColor(0xff0000).setTitle('🎉 GIVEAWAY TERMINÉ')
+        .setDescription('**Prix:** ' + gw.prize + '\n❌ Aucun participant n\'a atteint les **' + gw.invitesRequired + '** invitation(s) requise(s).')
+        .setTimestamp();
+      await gwMsg.edit({ embeds: [noWinEmbed] });
+      return;
+    }
+  }
 
   const winners: string[] = [];
   const pool = [...eligible];
