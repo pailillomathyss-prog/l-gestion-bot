@@ -69,6 +69,7 @@ import {
           .addStringOption((o) => o.setName("durée").setDescription("Durée: 10s, 5m, 2h, 1d").setRequired(true))
           .addIntegerOption((o) => o.setName("gagnants").setDescription("Nombre de gagnants").setMinValue(1).setRequired(true))
           .addStringOption((o) => o.setName("prix").setDescription("Lot du giveaway").setRequired(true))
+            .addIntegerOption((o) => o.setName("invitations").setDescription("Nb d'invitations min pour participer").setMinValue(1).setRequired(false))
       )
       .addSubcommand((s) =>
         s.setName("end").setDescription("Terminer un giveaway")
