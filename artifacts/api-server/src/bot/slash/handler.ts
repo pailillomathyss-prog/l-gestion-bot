@@ -169,6 +169,7 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
         const winners = interaction.options.getInteger("gagnants", true);
         const prize = interaction.options.getString("prix", true);
         const endsAt = Date.now() + duration;
+      const invitesRequired = interaction.options.getInteger("invitations") ?? undefined;
 
         const embed = new EmbedBuilder()
           .setColor(0xffd700).setTitle("🎉 GIVEAWAY 🎉")
@@ -314,7 +315,56 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
         break;
       }
 
-      case "help": {
+
+        case "invites": {
+          await interaction.deferReply();
+          const targetUser = interaction.options.getUser("utilisateur");
+          const invites = await guild.invites.fetch();
+          const byUser = new Map<string, { uses: number; links: number }>();
+          for (const inv of invites.values()) {
+            if (!inv.inviter) continue;
+            const e = byUser.get(inv.inviter.id) ?? { uses: 0, links: 0 };
+            e.uses += inv.uses ?? 0; e.links += 1;
+            byUser.set(inv.inviter.id, e);
+          }
+          if (targetUser) {
+            const data = byUser.get(targetUser.id) ?? { uses: 0, links: 0 };
+            const userInvites = invites.filter((inv) => inv.inviter?.id === targetUser.id);
+            const embed = new EmbedBuilder()
+              .setColor(0x5865f2)
+              .setTitle("Invitations de " + targetUser.username)
+              .setThumbnail(targetUser.displayAvatarURL())
+              .addFields(
+                { name: "Invitations utilisees", value: "**" + data.uses + "**", inline: true },
+                { name: "Liens actifs", value: "**" + data.links + "**", inline: true }
+              ).setTimestamp();
+            if (userInvites.size > 0) {
+              const list = userInvites
+                .map((inv) => "`" + inv.code + "` — **" + (inv.uses ?? 0) + "** util.")
+                .slice(0, 10).join("\n");
+              embed.addFields({ name: "Liens", value: list });
+            } else { embed.setDescription("Cet utilisateur n\'a aucune invitation active."); }
+            return interaction.editReply({ embeds: [embed] });
+          }
+          const sorted = [...byUser.entries()].sort((a, b) => b[1].uses - a[1].uses);
+          const totalUses = invites.reduce((s, i) => s + (i.uses ?? 0), 0);
+          const embed = new EmbedBuilder()
+            .setColor(0x5865f2)
+            .setTitle("Invitations — " + guild.name)
+            .addFields(
+              { name: "Liens actifs", value: "**" + invites.size + "**", inline: true },
+              { name: "Total utilisations", value: "**" + totalUses + "**", inline: true }
+            ).setTimestamp();
+          if (sorted.length) {
+            const lb = sorted.slice(0, 10)
+              .map(([id, d], i) => "**" + (i + 1) + ".** <@" + id + "> — **" + d.uses + "** inv. (" + d.links + " lien(s))")
+              .join("\n");
+            embed.addFields({ name: "🏆 Top inviteurs", value: lb });
+          } else { embed.setDescription("Aucune invitation active."); }
+          return interaction.editReply({ embeds: [embed] });
+        }
+
+        case "help": {
       await interaction.reply({
         ephemeral: true,
         embeds: [
