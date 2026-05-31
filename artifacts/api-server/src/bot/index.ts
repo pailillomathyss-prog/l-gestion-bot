@@ -61,6 +61,7 @@ export interface GiveawayData {
   endsAt: number;
   ended: boolean;
   participants: Set<string>;
+  invitesRequired?: number;
 }
 
 client.once(Events.ClientReady, async (c) => {
