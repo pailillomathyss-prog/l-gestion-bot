@@ -138,6 +138,11 @@ import {
       ),
 
     new SlashCommandBuilder()
+        .setName("lockstaff")
+        .setDescription("Rendre les salons staff/mod/admin invisibles a tout le monde sauf le role Staff")
+        .setDefaultMemberPermissions(ADMIN),
+
+    new SlashCommandBuilder()
         .setName("syncperms")
         .setDescription("Mettre à jour les permissions et le règlement sans recréer les salons")
         .setDefaultMemberPermissions(ADMIN),
