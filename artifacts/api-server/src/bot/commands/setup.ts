@@ -192,7 +192,7 @@ export async function setupCommand(message: Message, args: string[]) {
       { name: "💬 Salons créés", value: `${createdChannels}`, inline: true },
       { name: "📜 Règlement", value: rulesChannel ? `Envoyé dans ${rulesChannel}` : "❌ Non envoyé", inline: false },
       { name: "🎭 Sélection de rôles", value: rolesChannel ? `Envoyé dans ${rolesChannel}` : "❌ Non envoyé", inline: false },
-      { name: "🔒 Accès restreint", value: "Les membres doivent accepter le règlement avec ✅ pour voir les salons", inline: false },
+      { name: "🔒 Accès restreint", value: "Les membres obtiennent le rôle **@Random** en acceptant le règlement (✅) — donne accès à tout le serveur", inline: false },
     )
     .setDescription(
       errors.length > 0
