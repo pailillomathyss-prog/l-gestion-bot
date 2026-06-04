@@ -14,7 +14,15 @@ export function setRulesMessageId(id: string) {
   rulesMessageId = id;
 }
 
-const ROLE_NAME = "Random";
+function normalize(s: string): string {
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  }
+  function isRulesChannel(name: string): boolean {
+    const n = normalize(name);
+    return n.includes("regle") || n.includes("reglement") || n.includes("rules");
+  }
+
+  const ROLE_NAME = "Random";
 const ROLE_COLOR = 0x5865f2;
 
 async function getOrCreateRandomRole(guild: Guild) {
@@ -111,7 +119,7 @@ export async function ensureMembresRolePermissions(guild: Guild) {
   const everyoneRole = guild.roles.everyone;
   for (const [, channel] of guild.channels.cache) {
     const name = channel.name.toLowerCase();
-    const isRules = name.includes("regles") || name.includes("reglements") || name.includes("rules");
+    const isRules = isRulesChannel(channel.name);
     if (isRules) {
       try {
         await channel.permissionOverwrites.edit(everyoneRole, { ViewChannel: true, SendMessages: false });
