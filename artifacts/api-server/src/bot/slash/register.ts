@@ -138,7 +138,12 @@ import {
       ),
 
     new SlashCommandBuilder()
-      .setName("setup")
+        .setName("syncperms")
+        .setDescription("Mettre à jour les permissions et le règlement sans recréer les salons")
+        .setDefaultMemberPermissions(ADMIN),
+
+      new SlashCommandBuilder()
+        .setName("setup")
       .setDescription("Creer toute la structure du serveur")
       .setDefaultMemberPermissions(ADMIN),
 
