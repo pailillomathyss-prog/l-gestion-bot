@@ -318,7 +318,38 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
 
 
     
-      case "syncperms": {
+  
+    case "lockstaff": {
+      await interaction.deferReply({ ephemeral: true });
+      const { lockstaffCommand } = await import("../commands/lockstaff");
+      // On cree un faux message pour reutiliser la meme logique
+      const g = interaction.guild!;
+      const everyoneRole = g.roles.everyone;
+      function normalize2(s: string) { return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
+      function isStaff(name: string) { const n = normalize2(name); return n.includes("staff") || n.includes("mod") || n.includes("admin") || n.includes("log"); }
+      let staffRole = g.roles.cache.find((r) => normalize2(r.name).includes("staff") || normalize2(r.name).includes("admin") || normalize2(r.name).includes("moderateur") || normalize2(r.name).includes("modo"));
+      if (!staffRole) {
+        staffRole = await g.roles.create({ name: "Staff", color: 0xe74c3c, reason: "Role Staff cree par /lockstaff", permissions: [PermissionFlagsBits.ManageMessages, PermissionFlagsBits.KickMembers] });
+      }
+      let locked = 0; let errors = 0;
+      for (const [, ch] of g.channels.cache) {
+        if (!isStaff(ch.name)) continue;
+        try {
+          await ch.permissionOverwrites.edit(everyoneRole, { ViewChannel: false });
+          await ch.permissionOverwrites.edit(staffRole, { ViewChannel: true, SendMessages: true });
+          locked++;
+        } catch { errors++; }
+      }
+      return interaction.editReply({
+        embeds: [new EmbedBuilder().setColor(0x57f287).setTitle("🔒 Salons staff verrouilles")
+          .addFields(
+            { name: "Salons verrouilles", value: String(locked), inline: true },
+            { name: "Erreurs", value: String(errors), inline: true },
+            { name: "Role autorise", value: "@" + staffRole.name, inline: true }
+          ).setTimestamp()],
+      });
+    }
+    case "syncperms": {
         await interaction.deferReply({ ephemeral: true });
         const { ensureMembresRolePermissions, sendRulesMessage } = await import("../modules/rulesGate");
         const g = interaction.guild!;
