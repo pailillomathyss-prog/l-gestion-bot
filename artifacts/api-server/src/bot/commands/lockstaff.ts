@@ -1,10 +1,10 @@
-import { Message, EmbedBuilder, ChannelType, PermissionFlagsBits, OverwriteType } from "discord.js";
+import { Message, EmbedBuilder, ChannelType, PermissionFlagsBits, CategoryChannel, GuildChannel } from "discord.js";
 
 function normalize(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-function isStaffChannel(name: string): boolean {
+function isStaffName(name: string): boolean {
   const n = normalize(name);
   return n.includes("staff") || n.includes("mod") || n.includes("admin") || n.includes("log");
 }
@@ -16,9 +16,9 @@ export async function lockstaffCommand(message: Message) {
 
   // Trouver ou creer le role Staff
   let staffRole = guild.roles.cache.find(
-    (r) => normalize(r.name).includes("staff") || normalize(r.name).includes("admin") || normalize(r.name).includes("moderateur") || normalize(r.name).includes("modo")
+    (r) => normalize(r.name).includes("staff") || normalize(r.name).includes("admin") ||
+           normalize(r.name).includes("moderateur") || normalize(r.name).includes("modo")
   );
-
   if (!staffRole) {
     staffRole = await guild.roles.create({
       name: "Staff",
@@ -32,21 +32,48 @@ export async function lockstaffCommand(message: Message) {
     embeds: [new EmbedBuilder().setColor(0xffd700).setTitle("🔒 Verrouillage des salons staff en cours...").setTimestamp()],
   });
 
+  // Collecter toutes les categories staff
+  const staffCategories = guild.channels.cache.filter(
+    (ch) => ch.type === ChannelType.GuildCategory && isStaffName(ch.name)
+  ) as Map<string, CategoryChannel>;
+
+  // Collecter tous les salons dont le nom est staff OU dont la categorie parente est staff
+  const staffChannels = guild.channels.cache.filter((ch) => {
+    if (ch.type === ChannelType.GuildCategory) return false;
+    const parentIsStaff = ch.parentId ? staffCategories.has(ch.parentId) : false;
+    return isStaffName(ch.name) || parentIsStaff;
+  }) as Map<string, GuildChannel>;
+
   let locked = 0;
   let errors = 0;
 
-  for (const [, channel] of guild.channels.cache) {
-    if (!isStaffChannel(channel.name)) continue;
-
+  // 1. Verrouiller les categories staff
+  for (const [, cat] of staffCategories) {
     try {
-      // Bloquer @everyone
-      await channel.permissionOverwrites.edit(everyoneRole, { ViewChannel: false });
-      // Autoriser Staff
-      await channel.permissionOverwrites.edit(staffRole, { ViewChannel: true, SendMessages: true });
+      await cat.permissionOverwrites.set([
+        { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+      ]);
       locked++;
-    } catch {
-      errors++;
-    }
+    } catch { errors++; }
+  }
+
+  // 2. Synchroniser chaque salon enfant avec sa categorie + verrouiller les salons staff hors categorie
+  for (const [, ch] of staffChannels) {
+    try {
+      const parent = ch.parentId ? (guild.channels.cache.get(ch.parentId) as CategoryChannel | undefined) : undefined;
+      if (parent && staffCategories.has(parent.id)) {
+        // Synchroniser avec la categorie (herite des perms)
+        await (ch as any).lockPermissions();
+      } else {
+        // Salon staff hors categorie : verrouiller manuellement
+        await ch.permissionOverwrites.set([
+          { id: everyoneRole.id, deny: [PermissionFlagsBits.ViewChannel] },
+          { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+        ]);
+      }
+      locked++;
+    } catch { errors++; }
   }
 
   await progressMsg.edit({
@@ -54,13 +81,14 @@ export async function lockstaffCommand(message: Message) {
       new EmbedBuilder()
         .setColor(errors > 0 ? 0xffa500 : 0x57f287)
         .setTitle("🔒 Salons staff verrouilles")
-        .setDescription("Seuls les membres avec le role **@" + staffRole.name + "** peuvent voir les salons staff.")
+        .setDescription("Seuls les membres avec le role **@" + staffRole.name + "** peuvent voir les salons/categories staff.")
         .addFields(
-          { name: "✅ Salons verrouilles", value: String(locked), inline: true },
+          { name: "🗂️ Categories trouvees", value: String(staffCategories.size), inline: true },
+          { name: "💬 Salons verrouilles", value: String(locked), inline: true },
           { name: "❌ Erreurs", value: String(errors), inline: true },
-          { name: "🎭 Role autorise", value: "@" + staffRole.name, inline: true }
+          { name: "🎭 Role autorise", value: "@" + staffRole.name, inline: false },
+          { name: "🔍 Detection", value: "Noms contenant : staff, mod, admin, log", inline: false }
         )
-        .setFooter({ text: "Les salons detectes sont ceux contenant : staff, mod, admin, log" })
         .setTimestamp(),
     ],
   });
