@@ -1,4 +1,8 @@
 import { Message, EmbedBuilder, TextChannel, ChannelType } from "discord.js";
+
+function normalize(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 import { sendRulesMessage, ensureMembresRolePermissions } from "../modules/rulesGate";
 
 export async function syncpermsCommand(message: Message) {
@@ -11,10 +15,9 @@ export async function syncpermsCommand(message: Message) {
 
   let rulesChannel: TextChannel | null = null;
   for (const [, ch] of guild.channels.cache) {
-    const n = ch.name.toLowerCase();
     if (
       ch.type === ChannelType.GuildText &&
-      (n.includes("regles") || n.includes("reglements") || n.includes("rules"))
+      (normalize(ch.name).includes("regle") || normalize(ch.name).includes("rules"))
     ) {
       rulesChannel = ch as TextChannel;
       break;
