@@ -317,7 +317,33 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
       }
 
 
-        case "invites": {
+    
+      case "syncperms": {
+        await interaction.deferReply({ ephemeral: true });
+        const { ensureMembresRolePermissions, sendRulesMessage } = await import("../modules/rulesGate");
+        const g = interaction.guild!;
+        let rulesChannel: TextChannel | null = null;
+        for (const [, ch] of g.channels.cache) {
+          const n = ch.name.toLowerCase();
+          if (ch.type === ChannelType.GuildText &&
+              (n.includes("règles") || n.includes("regles") || n.includes("règlement") || n.includes("reglement"))) {
+            rulesChannel = ch as TextChannel; break;
+          }
+        }
+        const randomRole = await ensureMembresRolePermissions(g);
+        let rulesStatus = "❌ Aucun salon règles trouvé";
+        if (rulesChannel) { await sendRulesMessage(rulesChannel); rulesStatus = "✅ Envoyé dans " + rulesChannel; }
+        return interaction.editReply({
+          embeds: [new EmbedBuilder().setColor(0x57f287).setTitle("✅ Synchronisation terminée")
+            .addFields(
+              { name: "🔒 Permissions", value: "@everyone bloqué, @Random autorisé sur tous les salons" },
+              { name: "📜 Règlement", value: rulesStatus },
+              { name: "🎭 @Random", value: randomRole ? "Rôle prêt" : "❌ Erreur" },
+            ).setTimestamp()],
+        });
+      }
+
+      case "invites": {
           await interaction.deferReply();
           const targetUser = interaction.options.getUser("utilisateur");
           const invites = await guild.invites.fetch();
