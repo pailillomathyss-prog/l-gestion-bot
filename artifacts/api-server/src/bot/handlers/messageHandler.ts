@@ -6,6 +6,7 @@ import { debanCommand } from "../commands/deban";
 import { lockCommand, unlockCommand } from "../commands/lock";
 import { invitesCommand } from "../commands/invites";
 import { syncpermsCommand } from "../commands/syncperms";
+import { lockstaffCommand } from "../commands/lockstaff";
 import { clearCommand } from "../commands/clear";
 import { giveawayCommand } from "../commands/giveaway";
 import { setupCommand } from "../commands/setup";
@@ -72,6 +73,9 @@ export async function handleMessage(message: Message) {
       case "unmute":
       case "demute":
         await unmuteCommand(message, args);
+        break;
+      case "lockstaff":
+        await lockstaffCommand(message);
         break;
       case "syncperms":
         await syncpermsCommand(message);
