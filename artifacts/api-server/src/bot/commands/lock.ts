@@ -1,4 +1,4 @@
-import { Message, PermissionFlagsBits, EmbedBuilder, ChannelType, GuildChannel } from "discord.js";
+import { Message, PermissionFlagsBits, EmbedBuilder, GuildChannel, OverwriteType } from "discord.js";
 import { logger } from "../../lib/logger";
 
 export async function lockCommand(message: Message, args: string[]) {
@@ -6,10 +6,9 @@ export async function lockCommand(message: Message, args: string[]) {
 
   const channel = (message.mentions.channels.first() ?? message.channel) as GuildChannel;
   if (!channel || !("permissionOverwrites" in channel)) {
-    return message.reply("❌ Salon invalide. Mentionne un salon texte ou utilise la commande dans le salon a verrouiller.");
+    return message.reply("❌ Salon invalide.");
   }
 
-  // Verifier que le bot a la permission ManageChannels
   const botMember = message.guild.members.me;
   if (!botMember?.permissions.has(PermissionFlagsBits.ManageChannels)) {
     return message.reply("❌ Le bot n'a pas la permission `Gérer les salons`.");
@@ -19,11 +18,27 @@ export async function lockCommand(message: Message, args: string[]) {
   const mod = message.author.username ?? message.author.id;
 
   try {
+    // 1. Bloquer @everyone
     await channel.permissionOverwrites.edit(
       message.guild.roles.everyone,
       { SendMessages: false },
       { reason: mod + ": " + reason }
     );
+
+    // 2. Bloquer aussi chaque rôle qui a un overwrite explicite SendMessages = true
+    //    (ex: @Random) pour eviter qu'ils contournent le lock
+    for (const [, overwrite] of channel.permissionOverwrites.cache) {
+      if (overwrite.type !== OverwriteType.Role) continue;
+      if (overwrite.id === message.guild.roles.everyone.id) continue;
+      const allows = overwrite.allow;
+      if (allows.has(PermissionFlagsBits.SendMessages)) {
+        await channel.permissionOverwrites.edit(
+          overwrite.id,
+          { SendMessages: false },
+          { reason: mod + ": lock salon" }
+        );
+      }
+    }
 
     const embed = new EmbedBuilder()
       .setColor(0xff0000)
@@ -60,11 +75,15 @@ export async function unlockCommand(message: Message, args: string[]) {
   const mod = message.author.username ?? message.author.id;
 
   try {
-    await channel.permissionOverwrites.edit(
-      message.guild.roles.everyone,
-      { SendMessages: null },
-      { reason: mod + ": " + reason }
-    );
+    // Remettre SendMessages a null (herite) pour @everyone et tous les roles
+    for (const [, overwrite] of channel.permissionOverwrites.cache) {
+      if (overwrite.type !== OverwriteType.Role) continue;
+      await channel.permissionOverwrites.edit(
+        overwrite.id,
+        { SendMessages: null },
+        { reason: mod + ": " + reason }
+      );
+    }
 
     const embed = new EmbedBuilder()
       .setColor(0x57f287)
