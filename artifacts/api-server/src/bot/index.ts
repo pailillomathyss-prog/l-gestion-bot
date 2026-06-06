@@ -42,6 +42,13 @@ client.once(Events.ClientReady, async (c) => {
   c.user.setActivity("Surveille le serveur 🛡️");
 
   try {
+    await c.user.setUsername("MAI•GESTION");
+    logger.info("Nom du bot mis à jour : MAI•GESTION ✅");
+  } catch {
+    logger.info("Nom déjà défini ou cooldown Discord");
+  }
+
+  try {
     const avatarPath = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       "avatar.jpeg"
