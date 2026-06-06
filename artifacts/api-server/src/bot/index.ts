@@ -2,7 +2,6 @@ import {
   Client,
   GatewayIntentBits,
   Partials,
-  Collection,
   Events,
   GuildMember,
   TextChannel,
@@ -14,7 +13,6 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { logger } from "../lib/logger";
 import { handleMessage } from "./handlers/messageHandler";
-import { handleGiveawayReaction } from "./handlers/giveawayHandler";
 import {
   handleRulesReaction,
   RULES_REACTION,
@@ -51,19 +49,6 @@ export const client = new Client({
   partials: [Partials.Message, Partials.Reaction, Partials.User],
 });
 
-export const giveaways = new Collection<string, GiveawayData>();
-
-export interface GiveawayData {
-  messageId: string;
-  channelId: string;
-  prize: string;
-  winner: number;
-  endsAt: number;
-  ended: boolean;
-  participants: Set<string>;
-  invitesRequired?: number;
-}
-
 client.once(Events.ClientReady, async (c) => {
   logger.info(`Bot connecté en tant que ${c.user.tag}`);
   c.user.setActivity("Surveille le serveur 🛡️");
@@ -88,15 +73,15 @@ client.once(Events.ClientReady, async (c) => {
 
     const textChannels = guild.channels.cache.filter(
       (ch) => ch.type === ChannelType.GuildText
-    ) as Collection<string, TextChannel>;
+    ) as Map<string, TextChannel>;
 
-    const rulesChannel = textChannels.find((ch) =>
+    const rulesChannel = [...textChannels.values()].find((ch) =>
       ch.name.toLowerCase().includes("règles") ||
       ch.name.toLowerCase().includes("regles") ||
       ch.name.toLowerCase().includes("règlement")
     ) ?? null;
 
-    const rolesChannel = textChannels.find((ch) =>
+    const rolesChannel = [...textChannels.values()].find((ch) =>
       ch.name.toLowerCase().includes("rôles") ||
       ch.name.toLowerCase().includes("roles") ||
       (ch.name.toLowerCase().includes("role") && !ch.name.toLowerCase().includes("selector"))
@@ -177,8 +162,6 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   const emojiName = reaction.emoji.name ?? "";
   const messageId = reaction.message.id;
 
-  if (emojiName === "🎉") { await handleGiveawayReaction(reaction, user, "add"); return; }
-
   if (emojiName === RULES_REACTION && (rulesMessageId === null || messageId === rulesMessageId)) {
     await handleRulesReaction(member as GuildMember, messageId, "add"); return;
   }
@@ -199,8 +182,6 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
 
   const emojiName = reaction.emoji.name ?? "";
   const messageId = reaction.message.id;
-
-  if (emojiName === "🎉") { await handleGiveawayReaction(reaction, user, "remove"); return; }
 
   if (emojiName === RULES_REACTION && (rulesMessageId === null || messageId === rulesMessageId)) {
     await handleRulesReaction(member as GuildMember, messageId, "remove"); return;
