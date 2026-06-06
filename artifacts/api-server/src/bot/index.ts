@@ -3,9 +3,6 @@ import {
   GatewayIntentBits,
   Partials,
   Events,
-  GuildMember,
-  TextChannel,
-  ChannelType,
   ChatInputCommandInteraction,
 } from "discord.js";
 import { readFileSync } from "node:fs";
@@ -13,29 +10,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { logger } from "../lib/logger";
 import { handleMessage } from "./handlers/messageHandler";
-import {
-  handleRulesReaction,
-  RULES_REACTION,
-  rulesMessageId,
-  setRulesMessageId,
-  sendRulesMessage,
-  ensureMembresRolePermissions,
-} from "./modules/rulesGate";
-import {
-  handleRoleSelectorReaction,
-  ROLE_EMOJIS,
-  roleSelectorMessageId,
-  setRoleSelectorMessageId,
-  sendRoleSelectorMessage,
-} from "./modules/roleSelector";
 import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
-import {
-  getSavedRulesMessageId,
-  getSavedRoleSelectorMessageId,
-  saveRulesMessageId,
-  saveRoleSelectorMessageId,
-} from "./state";
 
 export const client = new Client({
   intents: [
@@ -67,69 +43,6 @@ client.once(Events.ClientReady, async (c) => {
 
   const token = process.env["DISCORD_TOKEN"]!;
   await registerSlashCommands(token, c.user.id);
-
-  for (const [, guild] of c.guilds.cache) {
-    logger.info(`Scan du serveur : ${guild.name}`);
-
-    const textChannels = guild.channels.cache.filter(
-      (ch) => ch.type === ChannelType.GuildText
-    ) as Map<string, TextChannel>;
-
-    const rulesChannel = [...textChannels.values()].find((ch) =>
-      ch.name.toLowerCase().includes("règles") ||
-      ch.name.toLowerCase().includes("regles") ||
-      ch.name.toLowerCase().includes("règlement")
-    ) ?? null;
-
-    const rolesChannel = [...textChannels.values()].find((ch) =>
-      ch.name.toLowerCase().includes("rôles") ||
-      ch.name.toLowerCase().includes("roles") ||
-      (ch.name.toLowerCase().includes("role") && !ch.name.toLowerCase().includes("selector"))
-    ) ?? null;
-
-    if (rulesChannel) {
-      const savedId = getSavedRulesMessageId(guild.id);
-      const existing = savedId
-        ? await rulesChannel.messages.fetch(savedId).catch(() => null)
-        : null;
-
-      if (existing) {
-        setRulesMessageId(savedId!);
-        logger.info(`Règlement déjà présent dans #${rulesChannel.name} ✅`);
-      } else {
-        logger.info(`Envoi du règlement dans #${rulesChannel.name}`);
-        const msgId = await sendRulesMessage(rulesChannel);
-        if (msgId) {
-          setRulesMessageId(msgId);
-          saveRulesMessageId(guild.id, msgId);
-          await ensureMembresRolePermissions(guild);
-        }
-      }
-    } else {
-      logger.warn(`Aucun salon "règles" trouvé sur ${guild.name}`);
-    }
-
-    if (rolesChannel) {
-      const savedId = getSavedRoleSelectorMessageId(guild.id);
-      const existing = savedId
-        ? await rolesChannel.messages.fetch(savedId).catch(() => null)
-        : null;
-
-      if (existing) {
-        setRoleSelectorMessageId(savedId!);
-        logger.info(`Sélection de rôles déjà présente dans #${rolesChannel.name} ✅`);
-      } else {
-        logger.info(`Envoi du sélecteur de rôles dans #${rolesChannel.name}`);
-        const msgId = await sendRoleSelectorMessage(rolesChannel);
-        if (msgId) {
-          setRoleSelectorMessageId(msgId);
-          saveRoleSelectorMessageId(guild.id, msgId);
-        }
-      }
-    } else {
-      logger.warn(`Aucun salon "rôles" trouvé sur ${guild.name}`);
-    }
-  }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -148,49 +61,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 client.on(Events.MessageCreate, handleMessage);
-
-client.on(Events.MessageReactionAdd, async (reaction, user) => {
-  if (user.bot) return;
-  if (reaction.partial) { try { await reaction.fetch(); } catch { return; } }
-  if (reaction.message.partial) { try { await reaction.message.fetch(); } catch { return; } }
-
-  const guild = reaction.message.guild;
-  if (!guild) return;
-  const member = await guild.members.fetch(user.id).catch(() => null);
-  if (!member) return;
-
-  const emojiName = reaction.emoji.name ?? "";
-  const messageId = reaction.message.id;
-
-  if (emojiName === RULES_REACTION && (rulesMessageId === null || messageId === rulesMessageId)) {
-    await handleRulesReaction(member as GuildMember, messageId, "add"); return;
-  }
-
-  if (ROLE_EMOJIS[emojiName] && (roleSelectorMessageId === null || messageId === roleSelectorMessageId)) {
-    await handleRoleSelectorReaction(member as GuildMember, messageId, emojiName, "add");
-  }
-});
-
-client.on(Events.MessageReactionRemove, async (reaction, user) => {
-  if (user.bot) return;
-  if (reaction.partial) { try { await reaction.fetch(); } catch { return; } }
-
-  const guild = reaction.message.guild;
-  if (!guild) return;
-  const member = await guild.members.fetch(user.id).catch(() => null);
-  if (!member) return;
-
-  const emojiName = reaction.emoji.name ?? "";
-  const messageId = reaction.message.id;
-
-  if (emojiName === RULES_REACTION && (rulesMessageId === null || messageId === rulesMessageId)) {
-    await handleRulesReaction(member as GuildMember, messageId, "remove"); return;
-  }
-
-  if (ROLE_EMOJIS[emojiName] && (roleSelectorMessageId === null || messageId === roleSelectorMessageId)) {
-    await handleRoleSelectorReaction(member as GuildMember, messageId, emojiName, "remove");
-  }
-});
 
 export function startBot() {
   const token = process.env["DISCORD_TOKEN"];
