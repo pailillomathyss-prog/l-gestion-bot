@@ -1,4 +1,5 @@
 import { Message, EmbedBuilder, PermissionFlagsBits } from "discord.js";
+import { logMute, logDemute } from "../modules/modLogs";
 
 function parseDuration(str: string): number {
   const match = str.match(/^(\d+)(s|m|h|d)$/i);
@@ -38,6 +39,7 @@ export async function muteCommand(message: Message, args: string[]) {
   const formatted = formatDuration(duration);
 
   await target.timeout(duration, `${message.author.tag}: ${reason}`);
+  await logMute(message.guild!, target.user, message.author, formatted, reason);
 
   await target.send({
     embeds: [
@@ -77,6 +79,7 @@ export async function demuteCommand(message: Message, args: string[]) {
   const reason = args.slice(1).join(" ") || "Aucune raison fournie";
 
   await target.timeout(null, `${message.author.tag}: ${reason}`);
+  await logDemute(message.guild!, target.user, message.author, reason);
 
   await message.channel.send({
     embeds: [

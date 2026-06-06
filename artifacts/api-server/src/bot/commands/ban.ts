@@ -1,4 +1,5 @@
 import { Message, EmbedBuilder, PermissionFlagsBits } from "discord.js";
+import { logBan, logUnban } from "../modules/modLogs";
 
 export async function banCommand(message: Message, args: string[]) {
   if (!message.member?.permissions.has(PermissionFlagsBits.BanMembers)) {
@@ -23,6 +24,7 @@ export async function banCommand(message: Message, args: string[]) {
   }).catch(() => {});
 
   await target.ban({ reason: `${message.author.tag}: ${reason}` });
+  await logBan(message.guild!, target.user, message.author, reason);
 
   await message.channel.send({
     embeds: [
@@ -54,6 +56,7 @@ export async function unbanCommand(message: Message, args: string[]) {
     if (!banned) return message.reply("❌ Cet utilisateur n'est pas banni.");
 
     await message.guild!.members.unban(userId, `${message.author.tag}: ${reason}`);
+    await logUnban(message.guild!, banned.user, message.author, reason);
 
     await message.channel.send({
       embeds: [

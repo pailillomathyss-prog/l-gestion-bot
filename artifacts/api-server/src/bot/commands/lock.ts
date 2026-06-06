@@ -1,4 +1,5 @@
 import { Message, EmbedBuilder, PermissionFlagsBits, TextChannel } from "discord.js";
+import { logLock } from "../modules/modLogs";
 
 export async function lockCommand(message: Message, args: string[]) {
   if (!message.member?.permissions.has(PermissionFlagsBits.ManageChannels)) {
@@ -14,6 +15,7 @@ export async function lockCommand(message: Message, args: string[]) {
       { SendMessages: false },
       { reason: `${message.author.tag}: ${reason}` }
     );
+    await logLock(message.guild!, channel, message.author, reason, true);
 
     await message.channel.send({
       embeds: [
@@ -44,6 +46,7 @@ export async function unlockCommand(message: Message, args: string[]) {
       { SendMessages: null },
       { reason: `${message.author.tag}: ${reason}` }
     );
+    await logLock(message.guild!, channel, message.author, reason, false);
 
     await message.channel.send({
       embeds: [
