@@ -4,6 +4,7 @@ import { antiLink } from "../modules/antiLink";
 import { banCommand, unbanCommand } from "../commands/ban";
 import { lockCommand, unlockCommand } from "../commands/lock";
 import { muteCommand, demuteCommand } from "../commands/mute";
+import { clearCommand } from "../commands/clear";
 
 const PREFIX = "!";
 
@@ -44,6 +45,10 @@ export async function handleMessage(message: Message) {
       case "demute":
       case "unmute":
         await demuteCommand(message, args);
+        break;
+      case "clear":
+      case "purge":
+        await clearCommand(message, args);
         break;
       default:
         break;
