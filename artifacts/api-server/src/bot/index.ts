@@ -19,14 +19,14 @@ import {
   ENTER_REACTION,
   rulesMessageId,
   setRulesMessageId,
-  sendEnterMessage,
+  findOrSendEnterMessage,
   syncChannelPermissions,
 } from "./modules/rulesGate";
 import { initMemberXP } from "./modules/expSystem";
 import { handleBoostUpdate } from "./modules/boostAnnounce";
 import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
-import { getSavedRulesMessageId, saveRulesMessageId } from "./state";
+import { getSavedRulesMessageId } from "./state";
 
 export const client = new Client({
   intents: [
@@ -69,15 +69,15 @@ client.once(Events.ClientReady, async (c) => {
   for (const [, guild] of c.guilds.cache) {
     logger.info(`Scan du serveur : ${guild.name}`);
 
-    // Charger tous les salons depuis l'API Discord
+    // Charger tous les salons et membres depuis l'API Discord
     await guild.channels.fetch();
     await guild.members.fetch();
 
+    // ── Salon règlement → message "entrer ?" persistant ──────────────────
     const textChannels = guild.channels.cache.filter(
       (ch) => ch.type === ChannelType.GuildText
     ) as Collection<string, TextChannel>;
 
-    // Trouver le salon règlement
     const rulesChannel = textChannels.find((ch) => {
       const n = ch.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       return n.includes("reglement") || n.includes("rules") || n.includes("regles");
@@ -85,30 +85,19 @@ client.once(Events.ClientReady, async (c) => {
 
     if (rulesChannel) {
       const savedId = getSavedRulesMessageId(guild.id);
-      const existing = savedId
-        ? await rulesChannel.messages.fetch(savedId).catch(() => null)
-        : null;
-
-      if (existing) {
-        setRulesMessageId(savedId!);
-        logger.info(`Message "entrer ?" déjà présent dans #${rulesChannel.name} ✅`);
-      } else {
-        const msgId = await sendEnterMessage(rulesChannel);
-        if (msgId) {
-          setRulesMessageId(msgId);
-          saveRulesMessageId(guild.id, msgId);
-        }
-      }
+      // findOrSendEnterMessage : cherche d'abord par ID, puis scanne, puis crée
+      const msgId = await findOrSendEnterMessage(rulesChannel, savedId, guild.id);
+      if (msgId) setRulesMessageId(msgId);
     } else {
       logger.warn(`Aucun salon "règlement" trouvé sur ${guild.name}`);
     }
 
-    // Synchroniser les permissions des salons
+    // ── Synchroniser les permissions des salons ───────────────────────────
     await syncChannelPermissions(guild).catch((err) =>
       logger.error({ err }, `Erreur sync permissions sur ${guild.name}`)
     );
 
-    // Initialiser les rôles XP pour tous les membres existants
+    // ── Initialiser XP / rôles de niveau pour les membres existants ───────
     for (const [, member] of guild.members.cache) {
       if (!member.user.bot) await initMemberXP(member).catch(() => {});
     }
@@ -122,9 +111,12 @@ client.on(Events.GuildMemberAdd, async (member) => {
   await initMemberXP(member as GuildMember).catch(() => {});
 });
 
-// Boost détecté via mise à jour du membre
+// Boost via mise à jour du membre
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
-  await handleBoostUpdate(oldMember as GuildMember, newMember as GuildMember).catch(() => {});
+  await handleBoostUpdate(
+    oldMember as GuildMember,
+    newMember as GuildMember
+  ).catch(() => {});
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -144,7 +136,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 client.on(Events.MessageCreate, handleMessage);
 
-// Réaction ✅ sur le message d'entrée → donner le rôle
+// Réaction ✅ → donner le rôle ⏳・nouveaux
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) { try { await reaction.fetch(); } catch { return; } }
@@ -158,7 +150,10 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   const emojiName = reaction.emoji.name ?? "";
   const messageId = reaction.message.id;
 
-  if (emojiName === ENTER_REACTION && (rulesMessageId === null || messageId === rulesMessageId)) {
+  if (
+    emojiName === ENTER_REACTION &&
+    (rulesMessageId === null || messageId === rulesMessageId)
+  ) {
     await handleEnterReaction(member as GuildMember, messageId, "add");
   }
 });
@@ -176,7 +171,10 @@ client.on(Events.MessageReactionRemove, async (reaction, user) => {
   const emojiName = reaction.emoji.name ?? "";
   const messageId = reaction.message.id;
 
-  if (emojiName === ENTER_REACTION && (rulesMessageId === null || messageId === rulesMessageId)) {
+  if (
+    emojiName === ENTER_REACTION &&
+    (rulesMessageId === null || messageId === rulesMessageId)
+  ) {
     await handleEnterReaction(member as GuildMember, messageId, "remove");
   }
 });

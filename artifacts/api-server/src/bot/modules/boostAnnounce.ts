@@ -9,49 +9,44 @@ import {
 } from "discord.js";
 import { logger } from "../../lib/logger";
 
-const BOOST_CHANNEL_NAME = "💎 • boost";
+// Nom exact du salon (caractère ・ = U+30FB)
+const BOOST_CHANNEL_NAME = "💎・boost";
 
 async function getBoostChannel(guild: Guild): Promise<TextChannel | null> {
   const ch = guild.channels.cache.find(
-    (c) =>
-      c.type === ChannelType.GuildText &&
-      c.name === BOOST_CHANNEL_NAME
+    (c) => c.type === ChannelType.GuildText && c.name === BOOST_CHANNEL_NAME
   ) as TextChannel | undefined;
   return ch ?? null;
 }
 
 /**
- * Appelle cette fonction dans l'événement GuildMemberUpdate
- * pour détecter un nouveau boost (premiumSince change de null → date)
+ * Détecte un boost via GuildMemberUpdate (premiumSince : null → date)
  */
 export async function handleBoostUpdate(
   oldMember: GuildMember,
   newMember: GuildMember
 ) {
   const wasBooster = Boolean(oldMember.premiumSince);
-  const isBooster = Boolean(newMember.premiumSince);
-
+  const isBooster  = Boolean(newMember.premiumSince);
   if (!wasBooster && isBooster) {
     await sendBoostAnnounce(newMember.guild, newMember);
   }
 }
 
 /**
- * Appelle cette fonction dans l'événement MessageCreate
- * pour capter les messages système de boost Discord
+ * Détecte un boost via les messages système Discord
  */
 export async function handleBoostMessage(message: Message) {
   if (!message.guild) return;
-  if (
-    message.type !== MessageType.UserPremiumGuildSubscription &&
-    message.type !== MessageType.UserPremiumGuildSubscriptionTier1 &&
-    message.type !== MessageType.UserPremiumGuildSubscriptionTier2 &&
-    message.type !== MessageType.UserPremiumGuildSubscriptionTier3
-  ) return;
-
-  const member = message.member;
-  if (!member) return;
-  await sendBoostAnnounce(message.guild, member);
+  const boostTypes = [
+    MessageType.UserPremiumGuildSubscription,
+    MessageType.UserPremiumGuildSubscriptionTier1,
+    MessageType.UserPremiumGuildSubscriptionTier2,
+    MessageType.UserPremiumGuildSubscriptionTier3,
+  ];
+  if (!boostTypes.includes(message.type)) return;
+  if (!message.member) return;
+  await sendBoostAnnounce(message.guild, message.member);
 }
 
 async function sendBoostAnnounce(guild: Guild, member: GuildMember) {
@@ -70,7 +65,7 @@ async function sendBoostAnnounce(guild: Guild, member: GuildMember) {
     .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
     .addFields(
       { name: "Niveau du serveur", value: `Niveau **${guild.premiumTier}**`, inline: true },
-      { name: "Nombre de boosts", value: `**${guild.premiumSubscriptionCount ?? 0}** boost(s)`, inline: true }
+      { name: "Nombre de boosts",  value: `**${guild.premiumSubscriptionCount ?? 0}** boost(s)`, inline: true }
     )
     .setFooter({ text: "MAI•GESTION" })
     .setTimestamp();
