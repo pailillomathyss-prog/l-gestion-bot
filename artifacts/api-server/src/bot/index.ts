@@ -24,6 +24,7 @@ import {
 } from "./modules/rulesGate";
 import { initMemberXP } from "./modules/expSystem";
 import { handleBoostUpdate } from "./modules/boostAnnounce";
+import { initPunishments } from "./modules/punishSystem";
 import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
 import { getSavedRulesMessageId } from "./state";
@@ -69,7 +70,6 @@ client.once(Events.ClientReady, async (c) => {
   for (const [, guild] of c.guilds.cache) {
     logger.info(`Scan du serveur : ${guild.name}`);
 
-    // Charger tous les salons et membres depuis l'API Discord
     await guild.channels.fetch();
     await guild.members.fetch();
 
@@ -85,7 +85,6 @@ client.once(Events.ClientReady, async (c) => {
 
     if (rulesChannel) {
       const savedId = getSavedRulesMessageId(guild.id);
-      // findOrSendEnterMessage : cherche d'abord par ID, puis scanne, puis crée
       const msgId = await findOrSendEnterMessage(rulesChannel, savedId, guild.id);
       if (msgId) setRulesMessageId(msgId);
     } else {
@@ -104,6 +103,11 @@ client.once(Events.ClientReady, async (c) => {
 
     logger.info(`✅ Initialisation complète du serveur "${guild.name}"`);
   }
+
+  // ── Reprendre les sanctions actives après redéploiement ──────────────────
+  await initPunishments(c).catch((err) =>
+    logger.error({ err }, "Erreur initPunishments")
+  );
 });
 
 // Nouveau membre → initialiser XP

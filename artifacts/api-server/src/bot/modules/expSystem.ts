@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isPunished, PUNISHMENT_ROLE } from "./punishSystem";
 
 const XP_FILE = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -51,7 +52,6 @@ export function getRoleName(level: number): string {
   return "🍃・nv 0+";
 }
 
-/** XP total nécessaire pour atteindre ce niveau */
 export function xpForLevel(level: number): number {
   return level * 100;
 }
@@ -89,6 +89,9 @@ async function ensureLevelRole(guild: Guild, roleName: string) {
 }
 
 async function updateMemberRoles(member: GuildMember, level: number) {
+  // Ne pas modifier les rôles d'un membre sanctionné
+  if (member.roles.cache.some((r) => r.name === PUNISHMENT_ROLE)) return;
+
   const targetRoleName = getRoleName(level);
   for (const { name } of LEVEL_ROLES) {
     const role = await ensureLevelRole(member.guild, name);
@@ -113,6 +116,10 @@ async function findLevelUpChannel(guild: Guild): Promise<TextChannel | null> {
 }
 
 export async function handleXP(member: GuildMember) {
+  // Bloquer XP si le membre est sanctionné
+  if (isPunished(member.guild.id, member.id)) return;
+  if (member.roles.cache.some((r) => r.name === PUNISHMENT_ROLE)) return;
+
   const data = loadXP();
   const guildId = member.guild.id;
   const userId = member.id;
@@ -162,5 +169,8 @@ export async function initMemberXP(member: GuildMember) {
     data[guildId][userId] = { xp: 0, level: 0, lastMessage: 0 };
     saveXP(data);
   }
-  await updateMemberRoles(member, data[guildId][userId].level);
+  // Ne pas toucher les rôles d'un membre sanctionné
+  if (!isPunished(guildId, userId)) {
+    await updateMemberRoles(member, data[guildId][userId].level);
+  }
 }
