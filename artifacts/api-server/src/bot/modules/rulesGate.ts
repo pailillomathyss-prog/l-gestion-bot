@@ -16,10 +16,11 @@ export function setRulesMessageId(id: string) {
   rulesMessageId = id;
 }
 
-// Nom exact du rôle (caractère ・ = U+30FB)
-const NOUVEAUX_ROLE = "⏳・nouveaux";
+// Noms exacts des rôles (caractère ・ = U+30FB pour nouveaux)
+const NOUVEAUX_ROLE    = "⏳・nouveaux";
+const PUNISHMENT_ROLE  = "🪫 • CONTRE LES RÈGLES";
 
-// Salons où PERSONNE ne peut écrire (lecture seule pour tout le monde)
+// Salons où PERSONNE ne peut écrire (lecture seule)
 const READ_ONLY_CHANNELS = [
   "⛩️・annonce",
   "⚡・giveaway",
@@ -28,6 +29,8 @@ const READ_ONLY_CHANNELS = [
   "🎯・règlement",
   "🌏・bienvenue",
 ];
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function normalize(s: string) {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -55,38 +58,57 @@ function isReadOnlyChannel(name: string) {
   return READ_ONLY_CHANNELS.includes(name);
 }
 
-async function ensureNouveauxRole(guild: Guild): Promise<Role | null> {
+/** Catégorie/salon "jugement" → espace prison visible SEULEMENT par 🪫 */
+function isJugementChannel(name: string) {
+  const n = normalize(name);
+  return n.includes("jugement") || n.includes("jugment") || n.includes("prison") || n.includes("sanction");
+}
+
+// ─── Roles helpers ────────────────────────────────────────────────────────────
+
+async function ensureRole(guild: Guild, roleName: string, color?: number): Promise<Role | null> {
   await guild.roles.fetch();
-  let role = guild.roles.cache.find((r) => r.name === NOUVEAUX_ROLE);
+  let role = guild.roles.cache.find((r) => r.name === roleName);
   if (!role) {
     try {
       role = await guild.roles.create({
-        name: NOUVEAUX_ROLE,
-        reason: "Rôle d'entrée créé automatiquement par MAI•GESTION",
+        name: roleName,
+        color: color ?? 0x000000,
+        reason: "Rôle créé automatiquement par MAI•GESTION",
         permissions: [],
       });
-      logger.info(`Rôle "${NOUVEAUX_ROLE}" créé sur ${guild.name}`);
+      logger.info(`Rôle "${roleName}" créé sur ${guild.name}`);
     } catch (err) {
-      logger.error({ err }, `Impossible de créer le rôle "${NOUVEAUX_ROLE}"`);
+      logger.error({ err }, `Impossible de créer le rôle "${roleName}"`);
       return null;
     }
   }
   return role;
 }
 
+async function ensureNouveauxRole(guild: Guild): Promise<Role | null> {
+  return ensureRole(guild, NOUVEAUX_ROLE);
+}
+
+// ─── Sync des permissions ─────────────────────────────────────────────────────
+
 /**
  * Synchronise les permissions de TOUS les salons.
  *
  * Règles :
- *  - @everyone : ne voit QUE le salon règlement (lecture seule)
- *  - ⏳・nouveaux : voit tous les salons
- *  - Salons en lecture seule (annonce, giveaway, événement, boost, règlement, bienvenue) :
- *      → ni @everyone ni ⏳・nouveaux ne peuvent écrire
- *  - Salons staff/mod/admin/log : non touchés
+ *  - @everyone     → seulement #règlement (lecture seule)
+ *  - ⏳・nouveaux  → tous les salons sauf ⚖️ J U G E M E N T
+ *  - 🪫 sanction   → SEULEMENT ⚖️ J U G E M E N T (peut écrire pour !warn)
+ *                    + #règlement (lecture seule via @everyone, aucun override)
+ *  - staff/mod/log → non touchés
  */
 export async function syncChannelPermissions(guild: Guild): Promise<void> {
   const nouveauxRole = await ensureNouveauxRole(guild);
   if (!nouveauxRole) return;
+
+  // Chercher/créer le rôle punition
+  await guild.roles.fetch();
+  const punishRole = guild.roles.cache.find((r) => r.name === PUNISHMENT_ROLE) ?? null;
 
   await guild.channels.fetch();
   const everyone = guild.roles.everyone;
@@ -111,9 +133,10 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
       continue;
     }
 
-    const isRules   = isRulesChannel(channel.name);
-    const isReadOnly = isReadOnlyChannel(channel.name);
-    const isTextLike = (
+    const isJugement  = isJugementChannel(channel.name);
+    const isRules     = isRulesChannel(channel.name);
+    const isReadOnly  = isReadOnlyChannel(channel.name);
+    const isTextLike  = (
       channel.type === ChannelType.GuildText ||
       channel.type === ChannelType.GuildAnnouncement ||
       channel.type === ChannelType.GuildForum
@@ -124,10 +147,27 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
     );
 
     try {
-      if (isRules || isReadOnly) {
-        // Salon règlement OU salon en lecture seule :
-        //   @everyone  → visible (lecture seule, peut réagir)
-        //   nouveaux   → visible (lecture seule, peut réagir)
+      if (isJugement) {
+        // ⚖️ J U G E M E N T — visible et accessible SEULEMENT au rôle 🪫
+        await channel.permissionOverwrites.edit(everyone, {
+          ViewChannel: false,
+        });
+        await channel.permissionOverwrites.edit(nouveauxRole, {
+          ViewChannel: false,   // explicitement caché même avec le rôle nouveaux
+        });
+        if (punishRole) {
+          await channel.permissionOverwrites.edit(punishRole, {
+            ViewChannel: true,
+            SendMessages: isTextLike ? true : null,
+            Connect: isVoiceLike ? true : null,
+            ReadMessageHistory: true,
+            AddReactions: true,
+          });
+        }
+
+      } else if (isRules) {
+        // #règlement — @everyone lit (et réagit), nouveaux aussi
+        // 🪫 hérite de @everyone → peut lire les règles, ne peut pas écrire
         await channel.permissionOverwrites.edit(everyone, {
           ViewChannel: true,
           SendMessages: false,
@@ -140,8 +180,38 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
           SendMessagesInThreads: false,
           AddReactions: true,
         });
+        // Pas d'override pour 🪫 → hérite @everyone (visible, pas d'écriture)
+        if (punishRole) {
+          await channel.permissionOverwrites.edit(punishRole, {
+            ViewChannel: true,
+            SendMessages: false,
+            AddReactions: true,
+          });
+        }
+
+      } else if (isReadOnly) {
+        // Salons lecture seule (annonce, boost, etc.) — @everyone + nouveaux lisent
+        // 🪫 ne doit PAS voir ces salons (cachés pour punition)
+        await channel.permissionOverwrites.edit(everyone, {
+          ViewChannel: true,
+          SendMessages: false,
+          SendMessagesInThreads: false,
+          AddReactions: true,
+        });
+        await channel.permissionOverwrites.edit(nouveauxRole, {
+          ViewChannel: true,
+          SendMessages: false,
+          SendMessagesInThreads: false,
+          AddReactions: true,
+        });
+        if (punishRole) {
+          await channel.permissionOverwrites.edit(punishRole, {
+            ViewChannel: false,
+          });
+        }
+
       } else {
-        // Autres salons : @everyone masqué, nouveaux a accès complet
+        // Salons normaux — @everyone masqué, nouveaux accède, 🪫 explicitement refusé
         await channel.permissionOverwrites.edit(everyone, {
           ViewChannel: false,
         });
@@ -151,7 +221,13 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
           Connect: isVoiceLike ? true : null,
           AddReactions: true,
         });
+        if (punishRole) {
+          await channel.permissionOverwrites.edit(punishRole, {
+            ViewChannel: false,
+          });
+        }
       }
+
       synced++;
     } catch (err) {
       logger.warn({ err }, `Impossible de sync #${channel.name}`);
@@ -159,24 +235,22 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
   }
 
   logger.info(
-    `✅ Permissions sync sur "${guild.name}" — ${synced} salons, ${skipped} ignorés`
+    `✅ Permissions sync sur "${guild.name}" — ${synced} salons, ${skipped} staff ignorés`
   );
 }
 
+// ─── Message "entrer ?" persistant ───────────────────────────────────────────
+
 /**
- * Cherche le message d'entrée existant dans le salon règlement.
- * 1. Tente de récupérer par l'ID sauvegardé
- * 2. Si introuvable, scanne les 50 derniers messages du bot pour retrouver l'embed
- * 3. Si vraiment absent → en envoie un nouveau
- *
- * Retourne l'ID du message (existant ou nouveau).
+ * 1. Cherche par ID sauvegardé
+ * 2. Scanne les 50 derniers messages du bot
+ * 3. Envoie un nouveau message si vraiment absent
  */
 export async function findOrSendEnterMessage(
   channel: TextChannel,
   savedId: string | null,
   guildId: string
 ): Promise<string | null> {
-  // 1. Vérifier l'ID sauvegardé
   if (savedId) {
     const existing = await channel.messages.fetch(savedId).catch(() => null);
     if (existing) {
@@ -186,7 +260,6 @@ export async function findOrSendEnterMessage(
     }
   }
 
-  // 2. Scanner les 50 derniers messages pour retrouver le message du bot
   try {
     const recent = await channel.messages.fetch({ limit: 50 });
     const botMsg = recent.find(
@@ -205,7 +278,6 @@ export async function findOrSendEnterMessage(
     logger.warn({ err }, "Erreur lors du scan des messages du salon");
   }
 
-  // 3. Aucun message trouvé → en envoyer un nouveau
   return sendEnterMessage(channel, guildId);
 }
 
@@ -238,6 +310,8 @@ async function sendEnterMessage(
     return null;
   }
 }
+
+// ─── Réaction d'entrée ────────────────────────────────────────────────────────
 
 export async function handleEnterReaction(
   member: GuildMember,
