@@ -20,6 +20,7 @@ import {
   rulesMessageId,
   setRulesMessageId,
   sendEnterMessage,
+  syncChannelPermissions,
 } from "./modules/rulesGate";
 import { initMemberXP } from "./modules/expSystem";
 import { registerSlashCommands } from "./slash/register";
@@ -96,6 +97,11 @@ client.once(Events.ClientReady, async (c) => {
     } else {
       logger.warn(`Aucun salon "règlement" trouvé sur ${guild.name}`);
     }
+
+    // Synchroniser les permissions des salons
+    await syncChannelPermissions(guild).catch((err) =>
+      logger.error({ err }, `Erreur sync permissions sur ${guild.name}`)
+    );
 
     // Initialiser les rôles XP pour tous les membres existants
     for (const [, member] of guild.members.cache) {
