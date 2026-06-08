@@ -148,13 +148,10 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
 
     try {
       if (isJugement) {
-        // ⚖️ J U G E M E N T — visible et accessible SEULEMENT au rôle 🪫
-        await channel.permissionOverwrites.edit(everyone, {
-          ViewChannel: false,
-        });
-        await channel.permissionOverwrites.edit(nouveauxRole, {
-          ViewChannel: false,   // explicitement caché même avec le rôle nouveaux
-        });
+        // ⚖️ J U G E M E N T ─ SEULEMENT visible par 🪫
+        // @everyone et ⏳・nouveaux : explicitement bloqués
+        await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
+        await channel.permissionOverwrites.edit(nouveauxRole, { ViewChannel: false });
         if (punishRole) {
           await channel.permissionOverwrites.edit(punishRole, {
             ViewChannel: true,
@@ -165,33 +162,9 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
           });
         }
 
-      } else if (isRules) {
-        // #règlement — @everyone lit (et réagit), nouveaux aussi
-        // 🪫 hérite de @everyone → peut lire les règles, ne peut pas écrire
-        await channel.permissionOverwrites.edit(everyone, {
-          ViewChannel: true,
-          SendMessages: false,
-          SendMessagesInThreads: false,
-          AddReactions: true,
-        });
-        await channel.permissionOverwrites.edit(nouveauxRole, {
-          ViewChannel: true,
-          SendMessages: false,
-          SendMessagesInThreads: false,
-          AddReactions: true,
-        });
-        // Pas d'override pour 🪫 → hérite @everyone (visible, pas d'écriture)
-        if (punishRole) {
-          await channel.permissionOverwrites.edit(punishRole, {
-            ViewChannel: true,
-            SendMessages: false,
-            AddReactions: true,
-          });
-        }
-
-      } else if (isReadOnly) {
-        // Salons lecture seule (annonce, boost, etc.) — @everyone + nouveaux lisent
-        // 🪫 ne doit PAS voir ces salons (cachés pour punition)
+      } else if (isRules || isReadOnly) {
+        // #règlement + salons lecture seule ─ @everyone et nouveaux lisent
+        // 🪫 : EXPLICITEMENT bloqué → puni ne voit rien sauf jugement
         await channel.permissionOverwrites.edit(everyone, {
           ViewChannel: true,
           SendMessages: false,
@@ -205,16 +178,12 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
           AddReactions: true,
         });
         if (punishRole) {
-          await channel.permissionOverwrites.edit(punishRole, {
-            ViewChannel: false,
-          });
+          await channel.permissionOverwrites.edit(punishRole, { ViewChannel: false });
         }
 
       } else {
-        // Salons normaux — @everyone masqué, nouveaux accède, 🪫 explicitement refusé
-        await channel.permissionOverwrites.edit(everyone, {
-          ViewChannel: false,
-        });
+        // Salons normaux ─ @everyone masqué, nouveaux accède, 🪫 explicitement bloqué
+        await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
         await channel.permissionOverwrites.edit(nouveauxRole, {
           ViewChannel: true,
           SendMessages: isTextLike ? true : null,
@@ -222,9 +191,7 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
           AddReactions: true,
         });
         if (punishRole) {
-          await channel.permissionOverwrites.edit(punishRole, {
-            ViewChannel: false,
-          });
+          await channel.permissionOverwrites.edit(punishRole, { ViewChannel: false });
         }
       }
 
