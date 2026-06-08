@@ -1,6 +1,7 @@
 import { Message, PermissionFlagsBits } from "discord.js";
 import { logger } from "../../lib/logger";
 import { antiLink } from "../modules/antiLink";
+import { handleXP } from "../modules/expSystem";
 import { banCommand, unbanCommand } from "../commands/ban";
 import { lockCommand, unlockCommand } from "../commands/lock";
 import { muteCommand, demuteCommand } from "../commands/mute";
@@ -14,6 +15,7 @@ export async function handleMessage(message: Message) {
 
   if (!message.content.startsWith(PREFIX)) {
     await antiLink(message);
+    if (message.member) await handleXP(message.member);
     return;
   }
 
