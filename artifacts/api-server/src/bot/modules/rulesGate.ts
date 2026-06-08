@@ -164,7 +164,7 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
 
       } else if (isRules || isReadOnly) {
         // #règlement + salons lecture seule ─ @everyone et nouveaux lisent
-        // 🪫 : EXPLICITEMENT bloqué → puni ne voit rien sauf jugement
+        // 🪫 : BLOQUÉ partout sauf jugement
         await channel.permissionOverwrites.edit(everyone, {
           ViewChannel: true,
           SendMessages: false,
