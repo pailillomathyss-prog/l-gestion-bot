@@ -10,6 +10,7 @@ import { muteCommand, demuteCommand } from "../commands/mute";
 import { clearCommand } from "../commands/clear";
 import { rankCommand } from "../commands/rank";
 import { warnStatusCommand } from "../commands/warnStatus";
+import { pardonCommand } from "../commands/pardon";
 
 const PREFIX = "!";
 
@@ -89,6 +90,9 @@ export async function handleMessage(message: Message) {
       case "clear":
       case "purge":
         await clearCommand(message, args);
+        break;
+      case "pardon":
+        await pardonCommand(message, args);
         break;
       default:
         break;
