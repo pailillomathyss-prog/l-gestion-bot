@@ -2,16 +2,21 @@ import { Message, PermissionFlagsBits } from "discord.js";
 import { logger } from "../../lib/logger";
 import { antiLink } from "../modules/antiLink";
 import { handleXP } from "../modules/expSystem";
+import { handleBoostMessage } from "../modules/boostAnnounce";
 import { banCommand, unbanCommand } from "../commands/ban";
 import { lockCommand, unlockCommand } from "../commands/lock";
 import { muteCommand, demuteCommand } from "../commands/mute";
 import { clearCommand } from "../commands/clear";
+import { rankCommand } from "../commands/rank";
 
 const PREFIX = "!";
 
 export async function handleMessage(message: Message) {
   if (message.author.bot) return;
   if (!message.guild) return;
+
+  // Messages système Discord (boosts, etc.)
+  await handleBoostMessage(message).catch(() => {});
 
   if (!message.content.startsWith(PREFIX)) {
     await antiLink(message);
@@ -25,6 +30,22 @@ export async function handleMessage(message: Message) {
   const command = args.shift()?.toLowerCase();
   if (!command) return;
 
+  // Commandes accessibles à TOUT le monde
+  try {
+    switch (command) {
+      case "rank":
+      case "level":
+      case "xp":
+        await rankCommand(message, args);
+        return;
+    }
+  } catch (err) {
+    logger.error({ err }, `Erreur commande publique: ${command}`);
+    await message.reply("❌ Une erreur s'est produite.").catch(() => {});
+    return;
+  }
+
+  // Commandes réservées aux administrateurs
   if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
 
   try {
@@ -56,7 +77,7 @@ export async function handleMessage(message: Message) {
         break;
     }
   } catch (err) {
-    logger.error({ err }, `Erreur commande: ${command}`);
+    logger.error({ err }, `Erreur commande admin: ${command}`);
     await message.reply("❌ Une erreur s'est produite.").catch(() => {});
   }
 }

@@ -23,6 +23,7 @@ import {
   syncChannelPermissions,
 } from "./modules/rulesGate";
 import { initMemberXP } from "./modules/expSystem";
+import { handleBoostUpdate } from "./modules/boostAnnounce";
 import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
 import { getSavedRulesMessageId, saveRulesMessageId } from "./state";
@@ -68,11 +69,15 @@ client.once(Events.ClientReady, async (c) => {
   for (const [, guild] of c.guilds.cache) {
     logger.info(`Scan du serveur : ${guild.name}`);
 
+    // Charger tous les salons depuis l'API Discord
+    await guild.channels.fetch();
+    await guild.members.fetch();
+
     const textChannels = guild.channels.cache.filter(
       (ch) => ch.type === ChannelType.GuildText
     ) as Collection<string, TextChannel>;
 
-    // Chercher le salon règlement
+    // Trouver le salon règlement
     const rulesChannel = textChannels.find((ch) => {
       const n = ch.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       return n.includes("reglement") || n.includes("rules") || n.includes("regles");
@@ -107,12 +112,19 @@ client.once(Events.ClientReady, async (c) => {
     for (const [, member] of guild.members.cache) {
       if (!member.user.bot) await initMemberXP(member).catch(() => {});
     }
+
+    logger.info(`✅ Initialisation complète du serveur "${guild.name}"`);
   }
 });
 
-// Quand un nouveau membre rejoint
+// Nouveau membre → initialiser XP
 client.on(Events.GuildMemberAdd, async (member) => {
   await initMemberXP(member as GuildMember).catch(() => {});
+});
+
+// Boost détecté via mise à jour du membre
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  await handleBoostUpdate(oldMember as GuildMember, newMember as GuildMember).catch(() => {});
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -132,6 +144,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 client.on(Events.MessageCreate, handleMessage);
 
+// Réaction ✅ sur le message d'entrée → donner le rôle
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) { try { await reaction.fetch(); } catch { return; } }
@@ -150,6 +163,7 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   }
 });
 
+// Retrait de réaction → retirer le rôle
 client.on(Events.MessageReactionRemove, async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) { try { await reaction.fetch(); } catch { return; } }

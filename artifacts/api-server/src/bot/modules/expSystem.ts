@@ -9,27 +9,27 @@ const XP_FILE = path.join(
   "../../xp-data.json"
 );
 
-interface UserXP {
+export interface UserXP {
   xp: number;
   level: number;
   lastMessage: number;
 }
 
-type XPData = Record<string, Record<string, UserXP>>;
+export type XPData = Record<string, Record<string, UserXP>>;
 
 const XP_COOLDOWN = 60_000;
 const XP_MIN = 15;
 const XP_MAX = 25;
 
-// nv 0+, nv 10+, nv 30+, nv 50+
-const LEVEL_ROLES: { level: number; name: string }[] = [
-  { level: 50, name: "⚜️ • nv 50+" },
-  { level: 30, name: "🔮 • nv 30+" },
-  { level: 10, name: "⛓️ • nv 10+" },
-  { level: 0,  name: "🌿 • nv 0+" },
+// Noms exacts des rôles Discord (caractère ・ = U+30FB)
+export const LEVEL_ROLES: { level: number; name: string }[] = [
+  { level: 50, name: "⚜️・nv 50+" },
+  { level: 30, name: "🔮・nv 30+" },
+  { level: 10, name: "⛓️・nv 10+" },
+  { level: 0,  name: "🍃・nv 0+" },
 ];
 
-function loadXP(): XPData {
+export function loadXP(): XPData {
   try {
     if (existsSync(XP_FILE)) return JSON.parse(readFileSync(XP_FILE, "utf-8"));
   } catch {}
@@ -40,22 +40,45 @@ function saveXP(data: XPData) {
   try { writeFileSync(XP_FILE, JSON.stringify(data, null, 2)); } catch {}
 }
 
-function getLevel(xp: number): number {
+export function getLevel(xp: number): number {
   return Math.floor(xp / 100);
 }
 
-function getRoleName(level: number): string {
+export function getRoleName(level: number): string {
   for (const r of LEVEL_ROLES) {
     if (level >= r.level) return r.name;
   }
-  return "🌿 • nv 0+";
+  return "🍃・nv 0+";
+}
+
+/** XP total nécessaire pour atteindre ce niveau */
+export function xpForLevel(level: number): number {
+  return level * 100;
+}
+
+export function getUserData(guildId: string, userId: string): UserXP {
+  const data = loadXP();
+  return data[guildId]?.[userId] ?? { xp: 0, level: 0, lastMessage: 0 };
+}
+
+export function getLeaderboard(guildId: string, limit = 10): Array<{ userId: string } & UserXP> {
+  const data = loadXP();
+  const guild = data[guildId] ?? {};
+  return Object.entries(guild)
+    .map(([userId, d]) => ({ userId, ...d }))
+    .sort((a, b) => b.xp - a.xp)
+    .slice(0, limit);
 }
 
 async function ensureLevelRole(guild: Guild, roleName: string) {
   let role = guild.roles.cache.find((r) => r.name === roleName);
   if (!role) {
     try {
-      role = await guild.roles.create({ name: roleName, reason: "Rôle de niveau créé automatiquement", permissions: [] });
+      role = await guild.roles.create({
+        name: roleName,
+        reason: "Rôle de niveau créé automatiquement par MAI•GESTION",
+        permissions: [],
+      });
       logger.info(`Rôle "${roleName}" créé`);
     } catch (err) {
       logger.error({ err }, `Impossible de créer le rôle ${roleName}`);
@@ -67,7 +90,6 @@ async function ensureLevelRole(guild: Guild, roleName: string) {
 
 async function updateMemberRoles(member: GuildMember, level: number) {
   const targetRoleName = getRoleName(level);
-
   for (const { name } of LEVEL_ROLES) {
     const role = await ensureLevelRole(member.guild, name);
     if (!role) continue;
