@@ -73,6 +73,22 @@ export async function ensureTables() {
     progress INTEGER NOT NULL DEFAULT 0,
     claimed BOOLEAN NOT NULL DEFAULT false,
     PRIMARY KEY (guild_id, user_id))`;
+  await sql`CREATE TABLE IF NOT EXISTS user_stats (
+    guild_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    messages_total INTEGER NOT NULL DEFAULT 0,
+    duels_won INTEGER NOT NULL DEFAULT 0,
+    coins_earned_total INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id))`;
+  await sql`CREATE TABLE IF NOT EXISTS user_badges (
+    guild_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    badge_id TEXT NOT NULL,
+    awarded_at BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id, badge_id))`;
+  await sql`CREATE TABLE IF NOT EXISTS daily_rewards (
+    guild_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    last_claim BIGINT NOT NULL DEFAULT 0,
+    streak INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, user_id))`;
   logger.info("✅ Tables DB vérifiées / créées");
 }
 
@@ -284,4 +300,73 @@ export async function getAllQuestProgress(guildId: string, questId: string): Pro
   const rows = await sql<{ user_id: string; progress: number; claimed: boolean }[]>`
     SELECT user_id,progress,claimed FROM quest_progress WHERE guild_id=${guildId} AND quest_id=${questId} AND progress > 0 ORDER BY progress DESC LIMIT 10`;
   return rows.map(r => ({ userId: r.user_id, progress: r.progress, claimed: r.claimed }));
+}
+
+// ── User stats (badges) ───────────────────────────────────────────────────────
+export interface UserStats { messagesTotal: number; duelsWon: number; coinsEarnedTotal: number; }
+const memStats = new Map<string, UserStats>();
+
+export async function getUserStats(guildId: string, userId: string): Promise<UserStats> {
+  const sql = getSql();
+  if (!sql) return memStats.get(`${guildId}:${userId}`) ?? { messagesTotal: 0, duelsWon: 0, coinsEarnedTotal: 0 };
+  const rows = await sql<{ messages_total: number; duels_won: number; coins_earned_total: number }[]>`
+    SELECT messages_total,duels_won,coins_earned_total FROM user_stats WHERE guild_id=${guildId} AND user_id=${userId}`;
+  if (!rows[0]) return { messagesTotal: 0, duelsWon: 0, coinsEarnedTotal: 0 };
+  return { messagesTotal: rows[0].messages_total, duelsWon: rows[0].duels_won, coinsEarnedTotal: rows[0].coins_earned_total };
+}
+
+export async function incrementStat(guildId: string, userId: string, stat: "messages_total" | "duels_won" | "coins_earned_total", amount: number): Promise<UserStats> {
+  const sql = getSql();
+  if (!sql) {
+    const key = `${guildId}:${userId}`;
+    const cur = memStats.get(key) ?? { messagesTotal: 0, duelsWon: 0, coinsEarnedTotal: 0 };
+    if (stat === "messages_total") cur.messagesTotal += amount;
+    else if (stat === "duels_won") cur.duelsWon += amount;
+    else cur.coinsEarnedTotal += amount;
+    memStats.set(key, cur);
+    return cur;
+  }
+  const col = stat === "messages_total" ? sql`messages_total` : stat === "duels_won" ? sql`duels_won` : sql`coins_earned_total`;
+  await sql`INSERT INTO user_stats (guild_id,user_id,${col}) VALUES (${guildId},${userId},${amount})
+    ON CONFLICT (guild_id,user_id) DO UPDATE SET ${col}=user_stats.${col}+${amount}`;
+  return getUserStats(guildId, userId);
+}
+
+// ── User badges ───────────────────────────────────────────────────────────────
+const memBadges = new Map<string, Set<string>>();
+
+export async function getUserBadges(guildId: string, userId: string): Promise<string[]> {
+  const sql = getSql();
+  if (!sql) return [...(memBadges.get(`${guildId}:${userId}`) ?? new Set())];
+  const rows = await sql<{ badge_id: string }[]>`SELECT badge_id FROM user_badges WHERE guild_id=${guildId} AND user_id=${userId}`;
+  return rows.map(r => r.badge_id);
+}
+
+export async function addUserBadge(guildId: string, userId: string, badgeId: string): Promise<void> {
+  const sql = getSql();
+  if (!sql) {
+    const key = `${guildId}:${userId}`;
+    const s = memBadges.get(key) ?? new Set<string>();
+    s.add(badgeId); memBadges.set(key, s); return;
+  }
+  await sql`INSERT INTO user_badges (guild_id,user_id,badge_id,awarded_at) VALUES (${guildId},${userId},${badgeId},${Date.now()}) ON CONFLICT DO NOTHING`;
+}
+
+// ── Daily rewards ─────────────────────────────────────────────────────────────
+export interface DailyRow { lastClaim: number; streak: number; }
+const memDaily = new Map<string, DailyRow>();
+
+export async function getDailyReward(guildId: string, userId: string): Promise<DailyRow | null> {
+  const sql = getSql();
+  if (!sql) return memDaily.get(`${guildId}:${userId}`) ?? null;
+  const rows = await sql<{ last_claim: string; streak: number }[]>`SELECT last_claim,streak FROM daily_rewards WHERE guild_id=${guildId} AND user_id=${userId}`;
+  if (!rows[0]) return null;
+  return { lastClaim: Number(rows[0].last_claim), streak: rows[0].streak };
+}
+
+export async function setDailyReward(guildId: string, userId: string, data: DailyRow): Promise<void> {
+  const sql = getSql();
+  if (!sql) { memDaily.set(`${guildId}:${userId}`, data); return; }
+  await sql`INSERT INTO daily_rewards (guild_id,user_id,last_claim,streak) VALUES (${guildId},${userId},${data.lastClaim},${data.streak})
+    ON CONFLICT (guild_id,user_id) DO UPDATE SET last_claim=${data.lastClaim}, streak=${data.streak}`;
 }
