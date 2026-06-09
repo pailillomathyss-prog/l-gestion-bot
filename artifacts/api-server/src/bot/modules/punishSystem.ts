@@ -7,24 +7,18 @@ import {
   ChannelType,
   Role,
 } from "discord.js";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { logger } from "../../lib/logger";
-
-// ─── Constantes ──────────────────────────────────────────────────────────────
+import {
+  getPunishment,
+  setPunishment,
+  deletePunishment,
+  getAllPunishments,
+} from "./db";
 
 export const PUNISHMENT_ROLE = "🪫 • CONTRE LES RÈGLES";
-const PUNISHMENT_DURATION = 24 * 60 * 60 * 1000; // 24 heures en ms
+const PUNISHMENT_DURATION = 24 * 60 * 60 * 1000;
 
-const PUNISH_FILE = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../punishments.json"
-);
-
-// Liste de mots interdits (normalisés sans accents)
 const BANNED_WORDS_RAW = [
-  // Insultes graves
   "viole", "viol",
   "fdp", "fils de pute",
   "ntm", "nique ta mere", "nique ta mère",
@@ -33,22 +27,18 @@ const BANNED_WORDS_RAW = [
   "batard", "batarde", "bâtard",
   "connard", "connasse",
   "va te faire foutre",
-  // Discrimination
   "negro", "negre", "nègre",
   "pede", "pédé",
-  // Sexuel
   "niquer", "nique",
-  // Abrév
-  "tg", // ta gueule (mot seul)
+  "tg",
 ];
 
-// Normalise un texte (accents → ascii, minuscules)
 function norm(s: string): string {
   return s
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " "); // ponctuation → espace
+    .replace(/[^a-z0-9\s]/g, " ");
 }
 
 const BANNED_NORMALIZED = BANNED_WORDS_RAW.map(norm);
@@ -57,36 +47,11 @@ export function containsBannedWord(content: string): string | null {
   const n = norm(content);
   for (let i = 0; i < BANNED_NORMALIZED.length; i++) {
     const word = BANNED_NORMALIZED[i];
-    // Chercher le mot entier (limites de mots ou sous-chaîne de plusieurs mots)
     const pattern = new RegExp(`(^|\\s)${word.replace(/ /g, "\\s+")}(\\s|$)`);
     if (pattern.test(n)) return BANNED_WORDS_RAW[i];
   }
   return null;
 }
-
-// ─── Persistance ─────────────────────────────────────────────────────────────
-
-interface PunishRecord {
-  roles: string[];    // IDs des rôles avant sanction
-  punishedAt: number;
-  expiresAt: number;
-  reason: string;
-}
-
-type PunishData = Record<string, Record<string, PunishRecord>>;
-
-function loadPunishments(): PunishData {
-  try {
-    if (existsSync(PUNISH_FILE)) return JSON.parse(readFileSync(PUNISH_FILE, "utf-8"));
-  } catch {}
-  return {};
-}
-
-function savePunishments(data: PunishData) {
-  try { writeFileSync(PUNISH_FILE, JSON.stringify(data, null, 2)); } catch {}
-}
-
-// ─── Rôle sanction ───────────────────────────────────────────────────────────
 
 async function ensurePunishRole(member: GuildMember): Promise<Role | null> {
   await member.guild.roles.fetch();
@@ -108,8 +73,6 @@ async function ensurePunishRole(member: GuildMember): Promise<Role | null> {
   return role;
 }
 
-// ─── Salon pour notifier la sanction ─────────────────────────────────────────
-
 async function findNotifyChannel(member: GuildMember): Promise<TextChannel | null> {
   return (member.guild.channels.cache.find(
     (c) =>
@@ -120,51 +83,47 @@ async function findNotifyChannel(member: GuildMember): Promise<TextChannel | nul
   ) as TextChannel) ?? null;
 }
 
-// ─── Appliquer la sanction ────────────────────────────────────────────────────
-
 export async function applyPunishment(
   member: GuildMember,
   triggerMessage: Message,
   word: string
 ) {
-  // 1. Supprimer le message
   await triggerMessage.delete().catch(() => {});
 
-  // 2. Vérifier que la personne n'est pas déjà sanctionnée
-  const data = loadPunishments();
   const guildId = member.guild.id;
   const userId = member.id;
-  if (data[guildId]?.[userId]) {
+
+  const existing = await getPunishment(guildId, userId);
+  if (existing) {
     logger.info(`${member.user.tag} déjà sanctionné — ignoré`);
     return;
   }
 
-  // 3. Sauvegarder tous les rôles actuels (sauf @everyone)
   const savedRoles = member.roles.cache
     .filter((r) => r.id !== member.guild.id)
     .map((r) => r.id);
 
-  // 4. Retirer tous les rôles
   try {
     await member.roles.set([]);
   } catch (err) {
     logger.warn({ err }, `Impossible de retirer les rôles de ${member.user.tag}`);
   }
 
-  // 5. Donner le rôle sanction
   const punishRole = await ensurePunishRole(member);
   if (punishRole) {
     await member.roles.add(punishRole).catch(() => {});
   }
 
-  // 6. Sauvegarder
   const now = Date.now();
   const expiresAt = now + PUNISHMENT_DURATION;
-  if (!data[guildId]) data[guildId] = {};
-  data[guildId][userId] = { roles: savedRoles, punishedAt: now, expiresAt, reason: word };
-  savePunishments(data);
 
-  // 7. Notifier dans un salon
+  await setPunishment(guildId, userId, {
+    roles: savedRoles,
+    punishedAt: now,
+    expiresAt,
+    reason: word,
+  });
+
   const ch = await findNotifyChannel(member);
   if (ch) {
     await ch.send({
@@ -185,18 +144,16 @@ export async function applyPunishment(
     }).catch(() => {});
   }
 
-  logger.info(`🪫 ${member.user.tag} sanctionné pour "${word}" jusqu'à ${new Date(expiresAt).toISOString()}`);
+  logger.info(
+    `🪫 ${member.user.tag} sanctionné pour "${word}" jusqu'à ${new Date(expiresAt).toISOString()}`
+  );
 
-  // 8. Planifier la restauration
   const remaining = expiresAt - Date.now();
   setTimeout(() => restoreMember(member.guild.client, guildId, userId), remaining);
 }
 
-// ─── Restaurer les rôles ─────────────────────────────────────────────────────
-
 export async function restoreMember(client: Client, guildId: string, userId: string) {
-  const data = loadPunishments();
-  const record = data[guildId]?.[userId];
+  const record = await getPunishment(guildId, userId);
   if (!record) return;
 
   const guild = await client.guilds.fetch(guildId).catch(() => null);
@@ -204,19 +161,15 @@ export async function restoreMember(client: Client, guildId: string, userId: str
 
   const member = await guild.members.fetch(userId).catch(() => null);
   if (!member) {
-    // Membre parti → nettoyer quand même
-    delete data[guildId][userId];
-    savePunishments(data);
+    await deletePunishment(guildId, userId);
     return;
   }
 
-  // Retirer le rôle sanction
   const punishRole = guild.roles.cache.find((r) => r.name === PUNISHMENT_ROLE);
   if (punishRole) {
     await member.roles.remove(punishRole).catch(() => {});
   }
 
-  // Remettre les anciens rôles
   let restored = 0;
   for (const roleId of record.roles) {
     const role = guild.roles.cache.get(roleId);
@@ -226,10 +179,8 @@ export async function restoreMember(client: Client, guildId: string, userId: str
     }
   }
 
-  delete data[guildId][userId];
-  savePunishments(data);
+  await deletePunishment(guildId, userId);
 
-  // Notifier
   const ch = await findNotifyChannel(member);
   if (ch) {
     await ch.send({
@@ -248,43 +199,37 @@ export async function restoreMember(client: Client, guildId: string, userId: str
   logger.info(`✅ Rôles restaurés pour ${member.user.tag} (${restored} rôles)`);
 }
 
-// ─── Vérifier si un membre est sanctionné ────────────────────────────────────
-
-export function isPunished(guildId: string, userId: string): boolean {
-  const data = loadPunishments();
-  return Boolean(data[guildId]?.[userId]);
+export async function isPunished(guildId: string, userId: string): Promise<boolean> {
+  const r = await getPunishment(guildId, userId);
+  return r !== null;
 }
 
-export function getPunishmentStatus(
+export async function getPunishmentStatus(
   guildId: string,
   userId: string
-): PunishRecord | null {
-  const data = loadPunishments();
-  return data[guildId]?.[userId] ?? null;
+) {
+  return getPunishment(guildId, userId);
 }
 
-// ─── Initialisation au démarrage (survit aux redéploiements) ─────────────────
-
 export async function initPunishments(client: Client) {
-  const data = loadPunishments();
+  const all = await getAllPunishments();
   let restored = 0;
   let scheduled = 0;
 
-  for (const guildId of Object.keys(data)) {
-    for (const userId of Object.keys(data[guildId])) {
-      const record = data[guildId][userId];
-      const remaining = record.expiresAt - Date.now();
-
-      if (remaining <= 0) {
-        // Sanction expirée → restaurer immédiatement
-        await restoreMember(client, guildId, userId).catch(() => {});
-        restored++;
-      } else {
-        // Sanction active → replanifier
-        setTimeout(() => restoreMember(client, guildId, userId), remaining);
-        scheduled++;
-        logger.info(`⏱️ Sanction de ${userId} : restauration dans ${Math.round(remaining / 60000)} min`);
-      }
+  for (const record of all) {
+    const remaining = record.expiresAt - Date.now();
+    if (remaining <= 0) {
+      await restoreMember(client, record.guildId, record.userId).catch(() => {});
+      restored++;
+    } else {
+      setTimeout(
+        () => restoreMember(client, record.guildId, record.userId),
+        remaining
+      );
+      scheduled++;
+      logger.info(
+        `⏱️ Sanction de ${record.userId} : restauration dans ${Math.round(remaining / 60000)} min`
+      );
     }
   }
 
@@ -292,7 +237,6 @@ export async function initPunishments(client: Client) {
     logger.info(`🪫 Punitions : ${restored} restaurées, ${scheduled} replanifiées`);
   }
 
-  // Sécurité : scanner les membres avec le rôle sanction SANS données sauvegardées
   for (const [, guild] of client.guilds.cache) {
     await guild.members.fetch().catch(() => {});
     const punishRole = guild.roles.cache.find((r) => r.name === PUNISHMENT_ROLE);
@@ -300,8 +244,8 @@ export async function initPunishments(client: Client) {
 
     for (const [, member] of guild.members.cache) {
       if (!member.roles.cache.has(punishRole.id)) continue;
-      // Ce membre a le rôle mais pas de données → restaurer avec rôles minimaux
-      if (!data[guild.id]?.[member.id]) {
+      const rec = await getPunishment(guild.id, member.id);
+      if (!rec) {
         logger.warn(`${member.user.tag} avait le rôle sanction sans données → nettoyage`);
         await member.roles.remove(punishRole).catch(() => {});
       }

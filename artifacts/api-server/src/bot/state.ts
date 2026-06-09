@@ -1,34 +1,9 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getState, setState } from "./modules/db";
 
-const STATE_FILE = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "bot-state.json"
-);
-
-interface BotState {
-  rulesMessages: Record<string, string>;
+export async function getSavedRulesMessageId(guildId: string): Promise<string | null> {
+  return getState(`rules_msg:${guildId}`);
 }
 
-function load(): BotState {
-  try {
-    if (existsSync(STATE_FILE)) return JSON.parse(readFileSync(STATE_FILE, "utf-8"));
-  } catch {}
-  return { rulesMessages: {} };
-}
-
-function save(state: BotState) {
-  try { writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch {}
-}
-
-export function getSavedRulesMessageId(guildId: string): string | null {
-  return load().rulesMessages[guildId] ?? null;
-}
-
-export function saveRulesMessageId(guildId: string, messageId: string) {
-  const state = load();
-  state.rulesMessages[guildId] = messageId;
-  save(state);
+export async function saveRulesMessageId(guildId: string, messageId: string) {
+  await setState(`rules_msg:${guildId}`, messageId);
 }

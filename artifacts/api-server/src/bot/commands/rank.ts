@@ -30,16 +30,15 @@ export async function rankCommand(message: Message, args: string[]) {
     target = message.member!;
   }
 
-  const data = getUserData(message.guild.id, target.id);
+  const data = await getUserData(message.guild.id, target.id);
   const level = getLevel(data.xp);
   const xpInLevel = data.xp - xpForLevel(level);
-  const xpNeeded = 100; // XP par niveau
+  const xpNeeded = 100;
 
   const bar = progressBar(xpInLevel, xpNeeded);
   const role = getRoleName(level);
 
-  // Classement
-  const lb = getLeaderboard(message.guild.id, 100);
+  const lb = await getLeaderboard(message.guild.id, 100);
   const rank = lb.findIndex((u) => u.userId === target.id) + 1;
   const rankStr = rank > 0 ? `#${rank}` : "Non classé";
 

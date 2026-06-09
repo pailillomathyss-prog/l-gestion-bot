@@ -1,45 +1,19 @@
 import { Guild, GuildMember, EmbedBuilder, TextChannel, ChannelType } from "discord.js";
 import { logger } from "../../lib/logger";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getXP, upsertXP, getAllXP } from "./db";
 import { isPunished, PUNISHMENT_ROLE } from "./punishSystem";
-
-const XP_FILE = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../xp-data.json"
-);
-
-export interface UserXP {
-  xp: number;
-  level: number;
-  lastMessage: number;
-}
-
-export type XPData = Record<string, Record<string, UserXP>>;
 
 const XP_COOLDOWN = 60_000;
 const XP_MIN = 15;
 const XP_MAX = 25;
+const VOICE_XP_GAIN = 20;
 
-// Noms exacts des rôles Discord (caractère ・ = U+30FB)
 export const LEVEL_ROLES: { level: number; name: string }[] = [
   { level: 50, name: "⚜️・nv 50+" },
   { level: 30, name: "🔮・nv 30+" },
   { level: 10, name: "⛓️・nv 10+" },
   { level: 0,  name: "🍃・nv 0+" },
 ];
-
-export function loadXP(): XPData {
-  try {
-    if (existsSync(XP_FILE)) return JSON.parse(readFileSync(XP_FILE, "utf-8"));
-  } catch {}
-  return {};
-}
-
-function saveXP(data: XPData) {
-  try { writeFileSync(XP_FILE, JSON.stringify(data, null, 2)); } catch {}
-}
 
 export function getLevel(xp: number): number {
   return Math.floor(xp / 100);
@@ -56,18 +30,19 @@ export function xpForLevel(level: number): number {
   return level * 100;
 }
 
-export function getUserData(guildId: string, userId: string): UserXP {
-  const data = loadXP();
-  return data[guildId]?.[userId] ?? { xp: 0, level: 0, lastMessage: 0 };
+export async function getUserData(
+  guildId: string,
+  userId: string
+): Promise<{ xp: number; level: number; lastMessage: number }> {
+  return getXP(guildId, userId);
 }
 
-export function getLeaderboard(guildId: string, limit = 10): Array<{ userId: string } & UserXP> {
-  const data = loadXP();
-  const guild = data[guildId] ?? {};
-  return Object.entries(guild)
-    .map(([userId, d]) => ({ userId, ...d }))
-    .sort((a, b) => b.xp - a.xp)
-    .slice(0, limit);
+export async function getLeaderboard(
+  guildId: string,
+  limit = 10
+): Promise<Array<{ userId: string; xp: number; level: number; lastMessage: number }>> {
+  const all = await getAllXP(guildId);
+  return all.slice(0, limit);
 }
 
 async function ensureLevelRole(guild: Guild, roleName: string) {
@@ -89,9 +64,7 @@ async function ensureLevelRole(guild: Guild, roleName: string) {
 }
 
 async function updateMemberRoles(member: GuildMember, level: number) {
-  // Ne pas modifier les rôles d'un membre sanctionné
   if (member.roles.cache.some((r) => r.name === PUNISHMENT_ROLE)) return;
-
   const targetRoleName = getRoleName(level);
   for (const { name } of LEVEL_ROLES) {
     const role = await ensureLevelRole(member.guild, name);
@@ -115,30 +88,28 @@ async function findLevelUpChannel(guild: Guild): Promise<TextChannel | null> {
   ) as TextChannel) ?? null;
 }
 
+// ── XP par message ────────────────────────────────────────────────────────────
+
 export async function handleXP(member: GuildMember) {
-  // Bloquer XP si le membre est sanctionné
-  if (isPunished(member.guild.id, member.id)) return;
+  if (await isPunished(member.guild.id, member.id)) return;
   if (member.roles.cache.some((r) => r.name === PUNISHMENT_ROLE)) return;
 
-  const data = loadXP();
   const guildId = member.guild.id;
   const userId = member.id;
-
-  if (!data[guildId]) data[guildId] = {};
-  const user = data[guildId][userId] ?? { xp: 0, level: 0, lastMessage: 0 };
+  const user = await getXP(guildId, userId);
 
   const now = Date.now();
   if (now - user.lastMessage < XP_COOLDOWN) return;
 
-  user.xp += Math.floor(Math.random() * (XP_MAX - XP_MIN + 1)) + XP_MIN;
+  const gain = Math.floor(Math.random() * (XP_MAX - XP_MIN + 1)) + XP_MIN;
+  user.xp += gain;
   user.lastMessage = now;
 
   const newLevel = getLevel(user.xp);
   const leveledUp = newLevel > user.level;
   user.level = newLevel;
 
-  data[guildId][userId] = user;
-  saveXP(data);
+  await upsertXP(guildId, userId, user.xp, user.level, user.lastMessage);
 
   if (leveledUp) {
     await updateMemberRoles(member, newLevel);
@@ -160,17 +131,83 @@ export async function handleXP(member: GuildMember) {
   }
 }
 
+// ── XP vocal (appelé toutes les 10 min) ──────────────────────────────────────
+
+const voiceStartMap = new Map<string, number>();
+
+export function trackVoiceJoin(guildId: string, userId: string) {
+  voiceStartMap.set(`${guildId}:${userId}`, Date.now());
+}
+
+export function trackVoiceLeave(guildId: string, userId: string) {
+  voiceStartMap.delete(`${guildId}:${userId}`);
+}
+
+export async function processVoiceXP(guild: Guild) {
+  const guildId = guild.id;
+  const now = Date.now();
+
+  for (const [, voiceState] of guild.voiceStates.cache) {
+    if (!voiceState.channelId) continue;
+    if (voiceState.member?.user.bot) continue;
+
+    const userId = voiceState.id;
+    const key = `${guildId}:${userId}`;
+    const joinedAt = voiceStartMap.get(key);
+    if (!joinedAt) {
+      voiceStartMap.set(key, now);
+      continue;
+    }
+
+    const member = voiceState.member;
+    if (!member) continue;
+    if (await isPunished(guildId, userId)) continue;
+    if (member.roles.cache.some((r) => r.name === PUNISHMENT_ROLE)) continue;
+
+    const user = await getXP(guildId, userId);
+    user.xp += VOICE_XP_GAIN;
+
+    const newLevel = getLevel(user.xp);
+    const leveledUp = newLevel > user.level;
+    user.level = newLevel;
+
+    await upsertXP(guildId, userId, user.xp, user.level, user.lastMessage);
+
+    if (leveledUp) {
+      await updateMemberRoles(member, newLevel);
+      const ch = await findLevelUpChannel(guild);
+      if (ch) {
+        await ch.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xffd700)
+              .setTitle("🎉 Niveau supérieur !")
+              .setDescription(
+                `${member} vient d'atteindre le **niveau ${newLevel}** grâce au vocal ! 🎙️`
+              )
+              .addFields({ name: "Nouveau rôle", value: getRoleName(newLevel) })
+              .setThumbnail(member.user.displayAvatarURL())
+              .setTimestamp(),
+          ],
+        }).catch(() => {});
+      }
+      logger.info(`${member.user.tag} → niveau ${newLevel} (vocal)`);
+    }
+
+    voiceStartMap.set(key, now);
+  }
+}
+
+// ── Init membre ───────────────────────────────────────────────────────────────
+
 export async function initMemberXP(member: GuildMember) {
-  const data = loadXP();
   const guildId = member.guild.id;
   const userId = member.id;
-  if (!data[guildId]) data[guildId] = {};
-  if (!data[guildId][userId]) {
-    data[guildId][userId] = { xp: 0, level: 0, lastMessage: 0 };
-    saveXP(data);
+  const user = await getXP(guildId, userId);
+  if (user.xp === 0 && user.level === 0 && user.lastMessage === 0) {
+    await upsertXP(guildId, userId, 0, 0, 0);
   }
-  // Ne pas toucher les rôles d'un membre sanctionné
-  if (!isPunished(guildId, userId)) {
-    await updateMemberRoles(member, data[guildId][userId].level);
+  if (!(await isPunished(guildId, userId))) {
+    await updateMemberRoles(member, user.level);
   }
 }

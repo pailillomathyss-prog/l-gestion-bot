@@ -237,7 +237,7 @@ export async function findOrSendEnterMessage(
     );
     if (botMsg) {
       rulesMessageId = botMsg.id;
-      saveRulesMessageId(guildId, botMsg.id);
+      await saveRulesMessageId(guildId, botMsg.id);
       logger.info(`📌 Message "entrer ?" retrouvé par scan dans #${channel.name}`);
       return botMsg.id;
     }
@@ -269,7 +269,7 @@ async function sendEnterMessage(
     const msg = await channel.send({ embeds: [embed] });
     await msg.react(ENTER_REACTION);
     rulesMessageId = msg.id;
-    saveRulesMessageId(guildId, msg.id);
+    await saveRulesMessageId(guildId, msg.id);
     logger.info(`📨 Message "entrer ?" envoyé dans #${channel.name} (id: ${msg.id})`);
     return msg.id;
   } catch (err) {

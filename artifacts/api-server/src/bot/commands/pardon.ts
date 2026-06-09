@@ -22,7 +22,7 @@ export async function pardonCommand(message: Message, args: string[]) {
     return;
   }
 
-  const status = getPunishmentStatus(message.guild.id, targetId);
+  const status = await getPunishmentStatus(message.guild.id, targetId);
   if (!status) {
     await message.reply({
       embeds: [

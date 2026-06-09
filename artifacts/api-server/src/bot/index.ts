@@ -8,6 +8,7 @@ import {
   ChannelType,
   Collection,
   ChatInputCommandInteraction,
+  VoiceState,
 } from "discord.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -22,12 +23,13 @@ import {
   findOrSendEnterMessage,
   syncChannelPermissions,
 } from "./modules/rulesGate";
-import { initMemberXP } from "./modules/expSystem";
+import { initMemberXP, processVoiceXP, trackVoiceJoin, trackVoiceLeave } from "./modules/expSystem";
 import { handleBoostUpdate } from "./modules/boostAnnounce";
 import { initPunishments } from "./modules/punishSystem";
 import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
 import { getSavedRulesMessageId } from "./state";
+import { ensureTables } from "./modules/db";
 
 export const client = new Client({
   intents: [
@@ -44,6 +46,11 @@ export const client = new Client({
 client.once(Events.ClientReady, async (c) => {
   logger.info(`Bot connecté en tant que ${c.user.tag}`);
   c.user.setActivity("Surveille le serveur 🛡️");
+
+  // ── Créer les tables DB si besoin ─────────────────────────────────────────
+  await ensureTables().catch((err) =>
+    logger.error({ err }, "Impossible de créer les tables DB")
+  );
 
   try {
     await c.user.setUsername("MAI•GESTION");
@@ -84,7 +91,7 @@ client.once(Events.ClientReady, async (c) => {
     }) ?? null;
 
     if (rulesChannel) {
-      const savedId = getSavedRulesMessageId(guild.id);
+      const savedId = await getSavedRulesMessageId(guild.id);
       const msgId = await findOrSendEnterMessage(rulesChannel, savedId, guild.id);
       if (msgId) setRulesMessageId(msgId);
     } else {
@@ -108,6 +115,17 @@ client.once(Events.ClientReady, async (c) => {
   await initPunishments(c).catch((err) =>
     logger.error({ err }, "Erreur initPunishments")
   );
+
+  // ── XP vocal : +20 XP toutes les 10 minutes ──────────────────────────────
+  setInterval(async () => {
+    for (const [, guild] of c.guilds.cache) {
+      await processVoiceXP(guild).catch((err) =>
+        logger.warn({ err }, `Erreur voice XP sur ${guild.name}`)
+      );
+    }
+  }, 10 * 60 * 1000);
+
+  logger.info("🎙️ XP vocal actif (toutes les 10 min)");
 });
 
 // Nouveau membre → initialiser XP
@@ -121,6 +139,22 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
     oldMember as GuildMember,
     newMember as GuildMember
   ).catch(() => {});
+});
+
+// ── XP vocal : suivi des entrées/sorties de vocal ────────────────────────────
+client.on(Events.VoiceStateUpdate, (oldState: VoiceState, newState: VoiceState) => {
+  const guildId = newState.guild.id;
+  const userId = newState.id;
+
+  const joined = !oldState.channelId && newState.channelId;
+  const left   = oldState.channelId && !newState.channelId;
+  const moved  = oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId;
+
+  if (joined || moved) {
+    trackVoiceJoin(guildId, userId);
+  } else if (left) {
+    trackVoiceLeave(guildId, userId);
+  }
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {

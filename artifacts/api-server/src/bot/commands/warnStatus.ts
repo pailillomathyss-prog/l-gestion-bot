@@ -19,7 +19,6 @@ export async function warnStatusCommand(message: Message, args: string[]) {
   let targetId = message.member.id;
   let targetMention = `${message.member}`;
 
-  // Si un admin mentionne quelqu'un d'autre
   if (args[0]) {
     if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
       await message.reply("❌ Seuls les admins peuvent vérifier la sanction d'un autre membre.").catch(() => {});
@@ -34,7 +33,7 @@ export async function warnStatusCommand(message: Message, args: string[]) {
     targetMention = `${fetched}`;
   }
 
-  const status = getPunishmentStatus(message.guild.id, targetId);
+  const status = await getPunishmentStatus(message.guild.id, targetId);
 
   if (!status) {
     await message.reply({
@@ -60,21 +59,9 @@ export async function warnStatusCommand(message: Message, args: string[]) {
         .setDescription(`${targetMention} est actuellement sanctionné(e).`)
         .addFields(
           { name: "⚠️ Motif", value: `Mot interdit : \`${status.reason}\``, inline: false },
-          {
-            name: "🕐 Sanctionné le",
-            value: `<t:${Math.floor(status.punishedAt / 1000)}:F>`,
-            inline: true,
-          },
-          {
-            name: "🔓 Libération",
-            value: `<t:${Math.floor(status.expiresAt / 1000)}:R>`,
-            inline: true,
-          },
-          {
-            name: "⏳ Temps restant",
-            value: `**${formatDuration(remaining)}**`,
-            inline: true,
-          }
+          { name: "🕐 Sanctionné le", value: `<t:${Math.floor(status.punishedAt / 1000)}:F>`, inline: true },
+          { name: "🔓 Libération", value: `<t:${Math.floor(status.expiresAt / 1000)}:R>`, inline: true },
+          { name: "⏳ Temps restant", value: `**${formatDuration(remaining)}**`, inline: true }
         )
         .setFooter({ text: "MAI•GESTION" })
         .setTimestamp(),
