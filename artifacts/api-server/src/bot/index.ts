@@ -10,6 +10,7 @@ import {
   ChatInputCommandInteraction,
   VoiceState,
   ButtonInteraction,
+  UserSelectMenuInteraction,
   ComponentType,
   EmbedBuilder,
 } from "discord.js";
@@ -42,7 +43,7 @@ import {
   buildGenericShopComponents,
   buildPersonalShopEmbed,
 } from "./commands/shop";
-import { handleGameButton, postGameMenuIfNeeded } from "./modules/gameSystem";
+import { handleGameButton, handleGameSelect, postGameMenuIfNeeded } from "./modules/gameSystem";
 import { claimQuest } from "./modules/questSystem";
 
 export const client = new Client({
@@ -447,6 +448,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await (interaction as ButtonInteraction).followUp(reply).catch(() => {});
       } else {
         await (interaction as ButtonInteraction).reply(reply).catch(() => {});
+      }
+    });
+    return;
+  }
+
+  // Menu sélection adversaire duel
+  if (interaction.isUserSelectMenu() && interaction.customId.startsWith("game_duel_pick:")) {
+    await handleGameSelect(interaction as UserSelectMenuInteraction).catch(async (err) => {
+      logger.error({ err }, "Erreur handleGameSelect");
+      const reply = { content: "❌ Une erreur est survenue.", ephemeral: true };
+      if (interaction.replied || interaction.deferred) {
+        await (interaction as UserSelectMenuInteraction).followUp(reply).catch(() => {});
+      } else {
+        await (interaction as UserSelectMenuInteraction).reply(reply).catch(() => {});
       }
     });
     return;
