@@ -11,6 +11,7 @@ import {
   VoiceState,
   ButtonInteraction,
   ComponentType,
+  EmbedBuilder,
 } from "discord.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -31,10 +32,16 @@ import { initPunishments } from "./modules/punishSystem";
 import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
 import { getSavedRulesMessageId } from "./state";
-import { ensureTables } from "./modules/db";
+import { ensureTables, getCoins, addCoins } from "./modules/db";
 import { resumeGiveaways } from "./modules/giveawaySystem";
 import { startNewQuest, getQuestState } from "./modules/questSystem";
 import { joinGiveaway, getActiveGiveaways } from "./modules/db";
+import {
+  SHOP_ROLES,
+  buildGenericShopEmbed,
+  buildGenericShopComponents,
+  buildPersonalShopEmbed,
+} from "./commands/shop";
 
 export const client = new Client({
   intents: [
@@ -47,6 +54,37 @@ export const client = new Client({
   ],
   partials: [Partials.Message, Partials.Reaction, Partials.User],
 });
+
+// ── Auto-post le panneau de boutique dans 🧸・shop ────────────────────────────
+async function postShopIfNeeded(guild: import("discord.js").Guild, botId: string) {
+  const shopChannel = guild.channels.cache.find(
+    (ch) =>
+      ch.type === ChannelType.GuildText &&
+      (ch.name.toLowerCase().includes("shop") || ch.name.includes("🧸"))
+  ) as TextChannel | undefined;
+
+  if (!shopChannel) return;
+
+  try {
+    const recent = await shopChannel.messages.fetch({ limit: 15 });
+    const alreadyPosted = recent.some(
+      (m) =>
+        m.author.id === botId &&
+        m.embeds[0]?.title?.includes("Boutique")
+    );
+    if (alreadyPosted) {
+      logger.info(`Panneau boutique déjà posté dans #${shopChannel.name}`);
+      return;
+    }
+
+    const embed = buildGenericShopEmbed();
+    const components = buildGenericShopComponents();
+    await shopChannel.send({ embeds: [embed], components });
+    logger.info(`✅ Panneau boutique posté dans #${shopChannel.name}`);
+  } catch (err) {
+    logger.warn({ err }, `Impossible de poster le shop dans #${shopChannel.name}`);
+  }
+}
 
 client.once(Events.ClientReady, async (c) => {
   logger.info(`Bot connecté en tant que ${c.user.tag}`);
@@ -109,6 +147,9 @@ client.once(Events.ClientReady, async (c) => {
       if (!member.user.bot) await initMemberXP(member).catch(() => {});
     }
 
+    // ── Auto-post shop ─────────────────────────────────────────────────────
+    await postShopIfNeeded(guild, c.user.id);
+
     logger.info(`✅ Initialisation complète du serveur "${guild.name}"`);
   }
 
@@ -116,12 +157,10 @@ client.once(Events.ClientReady, async (c) => {
     logger.error({ err }, "Erreur initPunishments")
   );
 
-  // ── Reprendre les giveaways actifs ────────────────────────────────────────
   await resumeGiveaways(c).catch((err) =>
     logger.error({ err }, "Erreur resumeGiveaways")
   );
 
-  // ── Quêtes : démarrer ou reprendre ───────────────────────────────────────
   async function scheduleNextQuest() {
     for (const [, guild] of c.guilds.cache) {
       try {
@@ -148,7 +187,6 @@ client.once(Events.ClientReady, async (c) => {
   }
   await scheduleNextQuest().catch(() => {});
 
-  // ── XP vocal : +20 XP toutes les 10 minutes ──────────────────────────────
   setInterval(async () => {
     for (const [, guild] of c.guilds.cache) {
       await processVoiceXP(guild).catch((err) =>
@@ -160,6 +198,7 @@ client.once(Events.ClientReady, async (c) => {
   logger.info("🎙️ XP vocal actif (toutes les 10 min)");
   logger.info("🎉 Giveaway system actif");
   logger.info("🎯 Quest system actif");
+  logger.info("🧸 Shop system avec boutons actif");
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
@@ -188,14 +227,146 @@ client.on(Events.VoiceStateUpdate, (oldState: VoiceState, newState: VoiceState) 
   }
 });
 
-// ── Interactions (slash + boutons) ───────────────────────────────────────────
+// ── Handler boutique (boutons) ────────────────────────────────────────────────
+async function handleShopButton(btn: ButtonInteraction) {
+  if (!btn.guild || !btn.member) {
+    await btn.reply({ content: "❌ Erreur serveur.", ephemeral: true });
+    return;
+  }
+
+  const member = await btn.guild.members.fetch(btn.user.id).catch(() => null) as GuildMember | null;
+  if (!member) {
+    await btn.reply({ content: "❌ Impossible de récupérer ton profil.", ephemeral: true });
+    return;
+  }
+
+  // ── Solde ────────────────────────────────────────────────────────────────
+  if (btn.customId === "shop_balance") {
+    const balance = await getCoins(btn.guild.id, btn.user.id);
+    await btn.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xffd700)
+          .setTitle("💰 Ton solde")
+          .setDescription(`**${balance.toLocaleString("fr-FR")} 🪙**`)
+          .setFooter({ text: "MAI•GESTION • Gagne des pièces en chattant et en vocal !" })
+          .setTimestamp(),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  // ── Mes rôles ────────────────────────────────────────────────────────────
+  if (btn.customId === "shop_myitems") {
+    const owned = SHOP_ROLES.filter((r) =>
+      member.roles.cache.some((role) => role.name === r.name)
+    );
+    const balance = await getCoins(btn.guild.id, btn.user.id);
+    await btn.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x9b59b6)
+          .setTitle("🎒 Tes rôles de la boutique")
+          .setDescription(
+            owned.length > 0
+              ? owned.map((r) => `✅ **${r.name}** — ${r.description}`).join("\n")
+              : "Tu n'as encore aucun rôle de la boutique."
+          )
+          .addFields({ name: "💰 Solde actuel", value: `**${balance.toLocaleString("fr-FR")} 🪙**`, inline: false })
+          .setFooter({ text: "MAI•GESTION" })
+          .setTimestamp(),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  // ── Achat ────────────────────────────────────────────────────────────────
+  if (btn.customId.startsWith("shop_buy_")) {
+    const roleId = btn.customId.replace("shop_buy_", "");
+    const shopRole = SHOP_ROLES.find((r) => r.id === roleId);
+
+    if (!shopRole) {
+      await btn.reply({ content: "❌ Rôle introuvable.", ephemeral: true });
+      return;
+    }
+
+    const alreadyHas = member.roles.cache.some((r) => r.name === shopRole.name);
+    if (alreadyHas) {
+      await btn.reply({ content: `❌ Tu possèdes déjà le rôle **${shopRole.name}** !`, ephemeral: true });
+      return;
+    }
+
+    const balance = await getCoins(btn.guild.id, btn.user.id);
+    if (balance < shopRole.price) {
+      await btn.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xff4444)
+            .setTitle("❌ Solde insuffisant")
+            .setDescription(
+              `Il te faut **${shopRole.price.toLocaleString("fr-FR")} 🪙** pour acheter **${shopRole.name}**.\n` +
+              `Tu as actuellement **${balance.toLocaleString("fr-FR")} 🪙**.`
+            )
+            .addFields({
+              name: "💡 Comment gagner des pièces ?",
+              value: "• Envoie des messages (8–15 🪙, cooldown 1 min)\n• Reste en vocal (12 🪙 / 10 min)\n• Complète des quêtes (150–700 🪙)",
+            })
+            .setFooter({ text: "MAI•GESTION" })
+            .setTimestamp(),
+        ],
+        ephemeral: true,
+      });
+      return;
+    }
+
+    // Acheter
+    await btn.guild.roles.fetch();
+    let role = btn.guild.roles.cache.find((r) => r.name === shopRole.name);
+    if (!role) {
+      try {
+        role = await btn.guild.roles.create({
+          name: shopRole.name,
+          reason: "Rôle boutique MAI•GESTION",
+          permissions: [],
+        });
+      } catch {
+        await btn.reply({ content: "❌ Impossible de créer le rôle. Vérifie les permissions du bot.", ephemeral: true });
+        return;
+      }
+    }
+
+    await addCoins(btn.guild.id, btn.user.id, -shopRole.price);
+    await member.roles.add(role).catch(() => {});
+    const newBalance = await getCoins(btn.guild.id, btn.user.id);
+
+    await btn.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x00cc66)
+          .setTitle("✅ Achat réussi !")
+          .setDescription(`Tu as obtenu le rôle **${shopRole.name}** !\n\n${shopRole.description}`)
+          .addFields(
+            { name: "💸 Prix payé", value: `**${shopRole.price.toLocaleString("fr-FR")} 🪙**`, inline: true },
+            { name: "💰 Solde restant", value: `**${newBalance.toLocaleString("fr-FR")} 🪙**`, inline: true },
+          )
+          .setFooter({ text: "MAI•GESTION" })
+          .setTimestamp(),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+}
+
+// ── Interactions (slash + boutons) ────────────────────────────────────────────
 client.on(Events.InteractionCreate, async (interaction) => {
   // Bouton giveaway
   if (interaction.isButton() && interaction.customId === "giveaway_join") {
     const btn = interaction as ButtonInteraction;
     if (!btn.guild) { await btn.reply({ content: "❌ Erreur.", ephemeral: true }); return; }
 
-    // Trouver le giveaway associé au message
     const actives = await getActiveGiveaways().catch(() => []);
     const giveaway = actives.find(g => g.messageId === btn.message.id);
     if (!giveaway) {
@@ -211,12 +382,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       ephemeral: true,
     });
 
-    // Mettre à jour le compteur sur le message
     if (joined) {
       const updatedActives = await getActiveGiveaways().catch(() => []);
       const updated = updatedActives.find(g => g.id === giveaway.id);
       if (updated && btn.message.editable) {
-        const { EmbedBuilder } = await import("discord.js");
         const embed = new EmbedBuilder()
           .setColor(0xff69b4)
           .setTitle("🎉 GIVEAWAY")
@@ -230,6 +399,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
         btn.message.edit({ embeds: [embed] }).catch(() => {});
       }
     }
+    return;
+  }
+
+  // Boutons boutique
+  if (
+    interaction.isButton() &&
+    (interaction.customId.startsWith("shop_buy_") ||
+      interaction.customId === "shop_balance" ||
+      interaction.customId === "shop_myitems")
+  ) {
+    await handleShopButton(interaction as ButtonInteraction).catch(async (err) => {
+      logger.error({ err }, "Erreur handleShopButton");
+      const reply = { content: "❌ Une erreur est survenue.", ephemeral: true };
+      if (interaction.replied || interaction.deferred) {
+        await (interaction as ButtonInteraction).followUp(reply).catch(() => {});
+      } else {
+        await (interaction as ButtonInteraction).reply(reply).catch(() => {});
+      }
+    });
     return;
   }
 
