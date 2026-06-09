@@ -13,7 +13,8 @@ import {
   GuildMember,
   Message,
 } from "discord.js";
-import { getCoins, addCoins } from "./db";
+import { getCoins, addCoins, incrementStat, getUserStats } from "./db";
+import { checkBadges } from "./badgeSystem";
 import { logger } from "../../lib/logger";
 
 const SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "⭐", "💎", "7️⃣"];
@@ -431,6 +432,10 @@ async function resolveDuel(
   await addCoins(guildId, loser.id, -bet);
   const newWinnerBal = await addCoins(guildId, winner.id, bet);
   activeDuels.delete(channel.id);
+
+  const winStats = await incrementStat(guildId, winner.id, "duels_won", 1).catch(() => null);
+  await incrementStat(guildId, winner.id, "coins_earned_total", bet).catch(() => {});
+  if (winStats) await checkBadges(winner, winStats).catch(() => {});
 
   await loadMsg.edit({
     embeds: [
