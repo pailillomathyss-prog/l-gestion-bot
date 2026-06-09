@@ -129,6 +129,14 @@ export async function handleXP(member: GuildMember) {
   await onQuestProgress(member, "messages", 1).catch(() => {});
   await onQuestProgress(member, "xp", gain).catch(() => {});
 
+  // Stats + badges
+  const { incrementStat, getUserStats } = await import("./db");
+  const { checkBadges } = await import("./badgeSystem");
+  await incrementStat(guildId, userId, "messages_total", 1).catch(() => {});
+  await incrementStat(guildId, userId, "coins_earned_total", coinGain).catch(() => {});
+  const stats = await getUserStats(guildId, userId).catch(() => null);
+  if (stats) await checkBadges(member, stats).catch(() => {});
+
   if (leveledUp) {
     await updateMemberRoles(member, newLevel);
     const ch = await findLevelUpChannel(member.guild);
