@@ -73,14 +73,35 @@ async function ensurePunishRole(member: GuildMember): Promise<Role | null> {
   return role;
 }
 
-async function findNotifyChannel(member: GuildMember): Promise<TextChannel | null> {
-  return (member.guild.channels.cache.find(
+// Salon pour la notification de sanction (appliquée)
+async function findPunishChannel(guild: { channels: { cache: Map<string, { type: number; name: string }> } }): Promise<TextChannel | null> {
+  return (guild.channels.cache.find(
     (c) =>
       c.type === ChannelType.GuildText &&
       (c.name.toLowerCase().includes("général") ||
         c.name.toLowerCase().includes("general") ||
         c.name.toLowerCase().includes("chat"))
   ) as TextChannel) ?? null;
+}
+
+// Salon pour la notification de levée de sanction : info⏱️ (contient "info")
+async function findRestoreChannel(guild: { channels: { cache: Map<string, { type: number; name: string }> } }): Promise<TextChannel | null> {
+  const info = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("info")
+  ) as TextChannel | undefined;
+  if (info) return info;
+  // Fallback général
+  return (guild.channels.cache.find(
+    (c) =>
+      c.type === ChannelType.GuildText &&
+      (c.name.toLowerCase().includes("général") ||
+        c.name.toLowerCase().includes("general") ||
+        c.name.toLowerCase().includes("chat"))
+  ) as TextChannel) ?? null;
+}
+
+function autoDelete(msg: { delete: () => Promise<unknown> }, ms = 10_000) {
+  setTimeout(() => msg.delete().catch(() => {}), ms);
 }
 
 export async function applyPunishment(
@@ -124,7 +145,7 @@ export async function applyPunishment(
     reason: word,
   });
 
-  const ch = await findNotifyChannel(member);
+  const ch = await findPunishChannel(member.guild);
   if (ch) {
     await ch.send({
       embeds: [
@@ -181,19 +202,20 @@ export async function restoreMember(client: Client, guildId: string, userId: str
 
   await deletePunishment(guildId, userId);
 
-  const ch = await findNotifyChannel(member);
+  const ch = await findRestoreChannel(guild);
   if (ch) {
-    await ch.send({
+    const msg = await ch.send({
       embeds: [
         new EmbedBuilder()
           .setColor(0x00cc66)
           .setTitle("✅ Sanction levée")
-          .setDescription(`${member} a retrouvé ses rôles après sa sanction de 24h.`)
+          .setDescription(`${member} a retrouvé ses rôles après sa sanction.`)
           .addFields({ name: "Rôles restaurés", value: `**${restored}** rôle(s)` })
           .setFooter({ text: "MAI•GESTION" })
           .setTimestamp(),
       ],
-    }).catch(() => {});
+    }).catch(() => null);
+    if (msg) autoDelete(msg);
   }
 
   logger.info(`✅ Rôles restaurés pour ${member.user.tag} (${restored} rôles)`);

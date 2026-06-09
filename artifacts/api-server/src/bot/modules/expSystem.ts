@@ -79,6 +79,12 @@ async function updateMemberRoles(member: GuildMember, level: number) {
 }
 
 async function findLevelUpChannel(guild: Guild): Promise<TextChannel | null> {
+  // Priorité : ⌨️ • cmds (ou tout salon contenant "cmds")
+  const cmds = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("cmds")
+  ) as TextChannel | undefined;
+  if (cmds) return cmds;
+  // Fallback : général / general / chat
   return (guild.channels.cache.find(
     (c) =>
       c.type === ChannelType.GuildText &&
@@ -86,6 +92,10 @@ async function findLevelUpChannel(guild: Guild): Promise<TextChannel | null> {
         c.name.toLowerCase().includes("general") ||
         c.name.toLowerCase().includes("chat"))
   ) as TextChannel) ?? null;
+}
+
+function autoDelete(msg: { delete: () => Promise<unknown> }, ms = 10_000) {
+  setTimeout(() => msg.delete().catch(() => {}), ms);
 }
 
 // ── XP par message ────────────────────────────────────────────────────────────
@@ -115,7 +125,7 @@ export async function handleXP(member: GuildMember) {
     await updateMemberRoles(member, newLevel);
     const ch = await findLevelUpChannel(member.guild);
     if (ch) {
-      await ch.send({
+      const msg = await ch.send({
         embeds: [
           new EmbedBuilder()
             .setColor(0xffd700)
@@ -125,7 +135,8 @@ export async function handleXP(member: GuildMember) {
             .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp(),
         ],
-      }).catch(() => {});
+      }).catch(() => null);
+      if (msg) autoDelete(msg);
     }
     logger.info(`${member.user.tag} → niveau ${newLevel}`);
   }
@@ -177,7 +188,7 @@ export async function processVoiceXP(guild: Guild) {
       await updateMemberRoles(member, newLevel);
       const ch = await findLevelUpChannel(guild);
       if (ch) {
-        await ch.send({
+        const msg = await ch.send({
           embeds: [
             new EmbedBuilder()
               .setColor(0xffd700)
@@ -189,7 +200,8 @@ export async function processVoiceXP(guild: Guild) {
               .setThumbnail(member.user.displayAvatarURL())
               .setTimestamp(),
           ],
-        }).catch(() => {});
+        }).catch(() => null);
+        if (msg) autoDelete(msg);
       }
       logger.info(`${member.user.tag} → niveau ${newLevel} (vocal)`);
     }
