@@ -1,7 +1,8 @@
-import { Message, PermissionFlagsBits, EmbedBuilder, ChannelType } from "discord.js";
+import { Message, PermissionFlagsBits, EmbedBuilder, ChannelType, TextChannel } from "discord.js";
 import { logger } from "../../lib/logger";
 import { antiLink } from "../modules/antiLink";
 import { handleXP } from "../modules/expSystem";
+import { isInJugementZone } from "../modules/rulesGate";
 import { handleBoostMessage } from "../modules/boostAnnounce";
 import { containsBannedWord, applyPunishment } from "../modules/punishSystem";
 import { banCommand, unbanCommand } from "../commands/ban";
@@ -90,6 +91,8 @@ async function postGamesRules(message: Message) {
 export async function handleMessage(message: Message) {
   if (message.author.bot) return;
   if (!message.guild) return;
+
+  if (isInJugementZone(message.channel as TextChannel)) return;
 
   await handleBoostMessage(message).catch(() => {});
 
