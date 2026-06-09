@@ -108,6 +108,33 @@ export async function startNewQuest(client: Client) {
   }
 }
 
+export async function forceNewQuestForGuild(guild: Guild): Promise<{ questLabel: string }> {
+  const quest = pickNextQuest();
+  const now = Date.now();
+  const endsAt = now + 12 * 60 * 60 * 1000;
+
+  const questState: QuestStateRow = {
+    questId: quest.id,
+    questLabel: quest.label,
+    questType: quest.type,
+    questTarget: quest.target,
+    questReward: quest.reward,
+    startedAt: now,
+    messageId: null,
+  };
+  await setQuestState(guild.id, questState);
+
+  const ch = await findQuestChannel(guild);
+  if (!ch) throw new Error("Salon quêtes introuvable.");
+
+  const embed = await buildQuestEmbed(guild, questState, endsAt);
+  const msg = await ch.send({ embeds: [embed], components: buildQuestComponents() });
+  await updateQuestMessageId(guild.id, msg.id);
+
+  logger.info(`🔄 Quête forcée "${quest.id}" sur ${guild.name}`);
+  return { questLabel: quest.label };
+}
+
 export async function updateQuestMessage(guild: Guild) {
   const questState = await getQuestState(guild.id);
   if (!questState || !questState.messageId) return;
