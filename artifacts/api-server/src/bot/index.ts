@@ -9,6 +9,8 @@ import {
   Collection,
   ChatInputCommandInteraction,
   VoiceState,
+  ButtonInteraction,
+  ComponentType,
 } from "discord.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -30,6 +32,9 @@ import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
 import { getSavedRulesMessageId } from "./state";
 import { ensureTables } from "./modules/db";
+import { resumeGiveaways } from "./modules/giveawaySystem";
+import { startNewQuest, getQuestState } from "./modules/questSystem";
+import { joinGiveaway, getActiveGiveaways } from "./modules/db";
 
 export const client = new Client({
   intents: [
@@ -47,7 +52,6 @@ client.once(Events.ClientReady, async (c) => {
   logger.info(`Bot connecté en tant que ${c.user.tag}`);
   c.user.setActivity("Surveille le serveur 🛡️");
 
-  // ── Créer les tables DB si besoin ─────────────────────────────────────────
   await ensureTables().catch((err) =>
     logger.error({ err }, "Impossible de créer les tables DB")
   );
@@ -80,7 +84,6 @@ client.once(Events.ClientReady, async (c) => {
     await guild.channels.fetch();
     await guild.members.fetch();
 
-    // ── Salon règlement → message "entrer ?" persistant ──────────────────
     const textChannels = guild.channels.cache.filter(
       (ch) => ch.type === ChannelType.GuildText
     ) as Collection<string, TextChannel>;
@@ -98,12 +101,10 @@ client.once(Events.ClientReady, async (c) => {
       logger.warn(`Aucun salon "règlement" trouvé sur ${guild.name}`);
     }
 
-    // ── Synchroniser les permissions des salons ───────────────────────────
     await syncChannelPermissions(guild).catch((err) =>
       logger.error({ err }, `Erreur sync permissions sur ${guild.name}`)
     );
 
-    // ── Initialiser XP / rôles de niveau pour les membres existants ───────
     for (const [, member] of guild.members.cache) {
       if (!member.user.bot) await initMemberXP(member).catch(() => {});
     }
@@ -111,10 +112,41 @@ client.once(Events.ClientReady, async (c) => {
     logger.info(`✅ Initialisation complète du serveur "${guild.name}"`);
   }
 
-  // ── Reprendre les sanctions actives après redéploiement ──────────────────
   await initPunishments(c).catch((err) =>
     logger.error({ err }, "Erreur initPunishments")
   );
+
+  // ── Reprendre les giveaways actifs ────────────────────────────────────────
+  await resumeGiveaways(c).catch((err) =>
+    logger.error({ err }, "Erreur resumeGiveaways")
+  );
+
+  // ── Quêtes : démarrer ou reprendre ───────────────────────────────────────
+  async function scheduleNextQuest() {
+    for (const [, guild] of c.guilds.cache) {
+      try {
+        const state = await getQuestState(guild.id);
+        const now = Date.now();
+        if (state) {
+          const endsAt = state.startedAt + 12 * 60 * 60 * 1000;
+          if (now < endsAt) {
+            const remaining = endsAt - now;
+            logger.info(`⏳ Quête active sur ${guild.name}, prochaine dans ${Math.round(remaining / 60000)} min`);
+            setTimeout(async () => {
+              await startNewQuest(c).catch(() => {});
+              setInterval(() => startNewQuest(c).catch(() => {}), 12 * 60 * 60 * 1000);
+            }, remaining);
+            return;
+          }
+        }
+        await startNewQuest(c);
+      } catch (err) {
+        logger.error({ err }, `Erreur init quête sur ${guild.name}`);
+      }
+    }
+    setInterval(() => startNewQuest(c).catch(() => {}), 12 * 60 * 60 * 1000);
+  }
+  await scheduleNextQuest().catch(() => {});
 
   // ── XP vocal : +20 XP toutes les 10 minutes ──────────────────────────────
   setInterval(async () => {
@@ -126,14 +158,14 @@ client.once(Events.ClientReady, async (c) => {
   }, 10 * 60 * 1000);
 
   logger.info("🎙️ XP vocal actif (toutes les 10 min)");
+  logger.info("🎉 Giveaway system actif");
+  logger.info("🎯 Quest system actif");
 });
 
-// Nouveau membre → initialiser XP
 client.on(Events.GuildMemberAdd, async (member) => {
   await initMemberXP(member as GuildMember).catch(() => {});
 });
 
-// Boost via mise à jour du membre
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   await handleBoostUpdate(
     oldMember as GuildMember,
@@ -141,7 +173,6 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   ).catch(() => {});
 });
 
-// ── XP vocal : suivi des entrées/sorties de vocal ────────────────────────────
 client.on(Events.VoiceStateUpdate, (oldState: VoiceState, newState: VoiceState) => {
   const guildId = newState.guild.id;
   const userId = newState.id;
@@ -157,12 +188,56 @@ client.on(Events.VoiceStateUpdate, (oldState: VoiceState, newState: VoiceState) 
   }
 });
 
+// ── Interactions (slash + boutons) ───────────────────────────────────────────
 client.on(Events.InteractionCreate, async (interaction) => {
+  // Bouton giveaway
+  if (interaction.isButton() && interaction.customId === "giveaway_join") {
+    const btn = interaction as ButtonInteraction;
+    if (!btn.guild) { await btn.reply({ content: "❌ Erreur.", ephemeral: true }); return; }
+
+    // Trouver le giveaway associé au message
+    const actives = await getActiveGiveaways().catch(() => []);
+    const giveaway = actives.find(g => g.messageId === btn.message.id);
+    if (!giveaway) {
+      await btn.reply({ content: "❌ Ce giveaway est introuvable ou terminé.", ephemeral: true });
+      return;
+    }
+
+    const joined = await joinGiveaway(giveaway.id, btn.user.id).catch(() => false);
+    await btn.reply({
+      content: joined
+        ? "✅ Tu participes au giveaway ! Bonne chance 🎉"
+        : "❌ Tu participes déjà à ce giveaway.",
+      ephemeral: true,
+    });
+
+    // Mettre à jour le compteur sur le message
+    if (joined) {
+      const updatedActives = await getActiveGiveaways().catch(() => []);
+      const updated = updatedActives.find(g => g.id === giveaway.id);
+      if (updated && btn.message.editable) {
+        const { EmbedBuilder } = await import("discord.js");
+        const embed = new EmbedBuilder()
+          .setColor(0xff69b4)
+          .setTitle("🎉 GIVEAWAY")
+          .setDescription(`**${updated.prize}**\n\nClique sur 🎉 ci-dessous pour participer !`)
+          .addFields(
+            { name: "⏰ Fin", value: `<t:${Math.floor(updated.endsAt / 1000)}:R>`, inline: true },
+            { name: "👥 Participants", value: `**${updated.participants.length}**`, inline: true },
+          )
+          .setFooter({ text: "MAI•GESTION • 1 participation par personne" })
+          .setTimestamp();
+        btn.message.edit({ embeds: [embed] }).catch(() => {});
+      }
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
   try {
     await handleSlashCommand(interaction as ChatInputCommandInteraction);
   } catch (err) {
-    logger.error({ err }, `Erreur slash command: ${interaction.commandName}`);
+    logger.error({ err }, `Erreur slash command: ${(interaction as ChatInputCommandInteraction).commandName}`);
     const reply = { content: "❌ Une erreur est survenue.", ephemeral: true };
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(reply).catch(() => {});
@@ -174,7 +249,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 client.on(Events.MessageCreate, handleMessage);
 
-// Réaction ✅ → donner le rôle ⏳・nouveaux
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) { try { await reaction.fetch(); } catch { return; } }
@@ -196,7 +270,6 @@ client.on(Events.MessageReactionAdd, async (reaction, user) => {
   }
 });
 
-// Retrait de réaction → retirer le rôle
 client.on(Events.MessageReactionRemove, async (reaction, user) => {
   if (user.bot) return;
   if (reaction.partial) { try { await reaction.fetch(); } catch { return; } }
