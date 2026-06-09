@@ -53,6 +53,12 @@ export function containsBannedWord(content: string): string | null {
   return null;
 }
 
+/** Vérifie si un salon ou sa catégorie appartient à la zone jugement */
+function isJugementChannel(name: string): boolean {
+  const n = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return n.includes("jugement") || n.includes("jugment") || n.includes("prison") || n.includes("sanction");
+}
+
 async function ensurePunishRole(member: GuildMember): Promise<Role | null> {
   await member.guild.roles.fetch();
   let role = member.guild.roles.cache.find((r) => r.name === PUNISHMENT_ROLE);
@@ -73,7 +79,31 @@ async function ensurePunishRole(member: GuildMember): Promise<Role | null> {
   return role;
 }
 
-// Salon pour la notification de sanction (appliquée)
+/**
+ * S'assure que le rôle punition a bien ViewChannel: true sur tous les salons
+ * de la catégorie ⚖️•JUGEMENT (et ViewChannel: false sur tous les autres).
+ * Appelé à chaque sanction pour couvrir le cas où le rôle vient d'être créé.
+ */
+async function syncJugementPermissions(member: GuildMember, punishRole: Role): Promise<void> {
+  await member.guild.channels.fetch();
+  for (const [, ch] of member.guild.channels.cache) {
+    const parentName = (ch as { parent?: { name: string } | null }).parent?.name ?? "";
+    const jugement = isJugementChannel(ch.name) || isJugementChannel(parentName);
+    if (!jugement) continue;
+
+    const isTextLike = ch.type === ChannelType.GuildText || ch.type === ChannelType.GuildAnnouncement || ch.type === ChannelType.GuildForum;
+    const isVoiceLike = ch.type === ChannelType.GuildVoice || ch.type === ChannelType.GuildStageVoice;
+
+    await ch.permissionOverwrites.edit(punishRole, {
+      ViewChannel: true,
+      SendMessages: isTextLike ? true : null,
+      Connect: isVoiceLike ? true : null,
+      ReadMessageHistory: true,
+      AddReactions: true,
+    }).catch(() => {});
+  }
+}
+
 async function findPunishChannel(guild: { channels: { cache: Map<string, { type: number; name: string }> } }): Promise<TextChannel | null> {
   return (guild.channels.cache.find(
     (c) =>
@@ -84,7 +114,6 @@ async function findPunishChannel(guild: { channels: { cache: Map<string, { type:
   ) as TextChannel) ?? null;
 }
 
-// Salon pour la notification de levée de sanction : info⏱️ uniquement
 async function findRestoreChannel(guild: { channels: { cache: Map<string, { type: number; name: string }> } }): Promise<TextChannel | null> {
   return (guild.channels.cache.find(
     (c) => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("info")
@@ -123,6 +152,8 @@ export async function applyPunishment(
 
   const punishRole = await ensurePunishRole(member);
   if (punishRole) {
+    // Garantit que les salons JUGEMENT sont visibles pour ce rôle
+    await syncJugementPermissions(member, punishRole);
     await member.roles.add(punishRole).catch(() => {});
   }
 
@@ -193,7 +224,7 @@ export async function restoreMember(client: Client, guildId: string, userId: str
 
   await deletePunishment(guildId, userId);
 
-  // Envoyer un MP au membre
+  // MP au membre
   await member.send({
     embeds: [
       new EmbedBuilder()
@@ -231,10 +262,7 @@ export async function isPunished(guildId: string, userId: string): Promise<boole
   return r !== null;
 }
 
-export async function getPunishmentStatus(
-  guildId: string,
-  userId: string
-) {
+export async function getPunishmentStatus(guildId: string, userId: string) {
   return getPunishment(guildId, userId);
 }
 
