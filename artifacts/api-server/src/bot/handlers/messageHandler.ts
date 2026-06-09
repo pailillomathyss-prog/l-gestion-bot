@@ -14,6 +14,7 @@ import { helpCommand } from "../commands/help";
 import { warnStatusCommand } from "../commands/warnStatus";
 import { pardonCommand } from "../commands/pardon";
 import { restoreXpCommand } from "../commands/restorexp";
+import { syncPermsCommand } from "../commands/syncperms";
 
 const PREFIX = "!";
 
@@ -107,6 +108,9 @@ export async function handleMessage(message: Message) {
       case "restorexp":
       case "restoreexp":
         await restoreXpCommand(message);
+        break;
+      case "syncperms":
+        await syncPermsCommand(message);
         break;
       default:
         break;
