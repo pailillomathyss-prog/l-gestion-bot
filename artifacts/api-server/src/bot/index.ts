@@ -42,6 +42,7 @@ import {
   buildGenericShopComponents,
   buildPersonalShopEmbed,
 } from "./commands/shop";
+import { handleGameButton, postGameMenuIfNeeded } from "./modules/gameSystem";
 
 export const client = new Client({
   intents: [
@@ -150,6 +151,9 @@ client.once(Events.ClientReady, async (c) => {
     // ── Auto-post shop ─────────────────────────────────────────────────────
     await postShopIfNeeded(guild, c.user.id);
 
+    // ── Auto-post menu jeux ────────────────────────────────────────────────
+    await postGameMenuIfNeeded(guild, c.user.id);
+
     logger.info(`✅ Initialisation complète du serveur "${guild.name}"`);
   }
 
@@ -199,6 +203,7 @@ client.once(Events.ClientReady, async (c) => {
   logger.info("🎉 Giveaway system actif");
   logger.info("🎯 Quest system actif");
   logger.info("🧸 Shop system avec boutons actif");
+  logger.info("🎮 Games system actif (Casino, Coin Flip, Duel 1v1)");
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
@@ -399,6 +404,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
         btn.message.edit({ embeds: [embed] }).catch(() => {});
       }
     }
+    return;
+  }
+
+  // Boutons jeux
+  if (
+    interaction.isButton() &&
+    interaction.customId.startsWith("game_")
+  ) {
+    await handleGameButton(interaction as ButtonInteraction).catch(async (err) => {
+      logger.error({ err }, "Erreur handleGameButton");
+      const reply = { content: "❌ Une erreur est survenue.", ephemeral: true };
+      if (interaction.replied || interaction.deferred) {
+        await (interaction as ButtonInteraction).followUp(reply).catch(() => {});
+      } else {
+        await (interaction as ButtonInteraction).reply(reply).catch(() => {});
+      }
+    });
     return;
   }
 
