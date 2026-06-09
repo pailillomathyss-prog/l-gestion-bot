@@ -92,6 +92,8 @@ export async function handleMessage(message: Message) {
   if (message.author.bot) return;
   if (!message.guild) return;
 
+  await antiLink(message);
+
   if (isInJugementZone(message.channel as TextChannel)) return;
 
   await handleBoostMessage(message).catch(() => {});
@@ -107,12 +109,9 @@ export async function handleMessage(message: Message) {
   }
 
   if (!message.content.startsWith(PREFIX)) {
-    await antiLink(message);
     if (message.member) await handleXP(message.member);
     return;
   }
-
-  await antiLink(message);
 
   const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
   const command = args.shift()?.toLowerCase();
