@@ -84,19 +84,10 @@ async function findPunishChannel(guild: { channels: { cache: Map<string, { type:
   ) as TextChannel) ?? null;
 }
 
-// Salon pour la notification de levée de sanction : info⏱️ (contient "info")
+// Salon pour la notification de levée de sanction : info⏱️ uniquement
 async function findRestoreChannel(guild: { channels: { cache: Map<string, { type: number; name: string }> } }): Promise<TextChannel | null> {
-  const info = guild.channels.cache.find(
-    (c) => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("info")
-  ) as TextChannel | undefined;
-  if (info) return info;
-  // Fallback général
   return (guild.channels.cache.find(
-    (c) =>
-      c.type === ChannelType.GuildText &&
-      (c.name.toLowerCase().includes("général") ||
-        c.name.toLowerCase().includes("general") ||
-        c.name.toLowerCase().includes("chat"))
+    (c) => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("info")
   ) as TextChannel) ?? null;
 }
 
@@ -202,6 +193,20 @@ export async function restoreMember(client: Client, guildId: string, userId: str
 
   await deletePunishment(guildId, userId);
 
+  // Envoyer un MP au membre
+  await member.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0x00cc66)
+        .setTitle("✅ Ta sanction a été levée")
+        .setDescription(`Ta sanction sur **${guild.name}** est terminée. Tes rôles ont été restaurés.`)
+        .addFields({ name: "Rôles restaurés", value: `**${restored}** rôle(s)` })
+        .setFooter({ text: "MAI•GESTION" })
+        .setTimestamp(),
+    ],
+  }).catch(() => {});
+
+  // Message dans info⏱️ uniquement, disparaît après 10 secondes
   const ch = await findRestoreChannel(guild);
   if (ch) {
     const msg = await ch.send({
@@ -215,7 +220,7 @@ export async function restoreMember(client: Client, guildId: string, userId: str
           .setTimestamp(),
       ],
     }).catch(() => null);
-    if (msg) autoDelete(msg);
+    if (msg) autoDelete(msg, 10_000);
   }
 
   logger.info(`✅ Rôles restaurés pour ${member.user.tag} (${restored} rôles)`);
