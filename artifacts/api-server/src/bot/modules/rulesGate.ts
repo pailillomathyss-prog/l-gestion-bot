@@ -54,10 +54,17 @@ function isReadOnlyChannel(name: string) {
   return READ_ONLY_CHANNELS.includes(name);
 }
 
-/** Salons de la catégorie jugement — le bot ne touche pas à leurs permissions */
-function isJugementChannel(name: string) {
+/** Salons de la catégorie jugement — le bot ne touche RIEN dans ces salons */
+export function isJugementChannel(name: string) {
   const n = normalize(name);
   return n.includes("jugement") || n.includes("jugment") || n.includes("prison") || n.includes("sanction");
+}
+
+/** Vérifie si un message provient d'un salon jugement (nom ou catégorie parente) */
+export function isInJugementZone(channel: { name: string; parent?: { name: string } | null }): boolean {
+  if (isJugementChannel(channel.name)) return true;
+  if (channel.parent && isJugementChannel(channel.parent.name)) return true;
+  return false;
 }
 
 async function ensureRole(guild: Guild, roleName: string, color?: number): Promise<Role | null> {
