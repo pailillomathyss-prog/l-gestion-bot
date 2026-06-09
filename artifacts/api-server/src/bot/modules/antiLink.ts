@@ -1,14 +1,11 @@
 import { Message, PermissionFlagsBits, EmbedBuilder, TextChannel } from "discord.js";
 import { logAntiLink } from "./modLogs";
-import { isInJugementZone } from "./rulesGate";
 
 const LINK_REGEX = /https?:\/\/[^\s]+|discord\.gg\/[^\s]+|www\.[^\s]+\.[a-z]{2,}/gi;
 
 export async function antiLink(message: Message) {
   if (!message.guild) return;
   if (!message.member) return;
-
-  if (isInJugementZone(message.channel as TextChannel)) return;
 
   const hasModPerms =
     message.member.permissions.has(PermissionFlagsBits.ManageMessages) ||
