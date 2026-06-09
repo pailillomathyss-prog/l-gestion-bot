@@ -1,12 +1,16 @@
 import { Guild, GuildMember, EmbedBuilder, TextChannel, ChannelType } from "discord.js";
 import { logger } from "../../lib/logger";
-import { getXP, upsertXP, getAllXP } from "./db";
+import { getXP, upsertXP, getAllXP, addCoins } from "./db";
 import { isPunished, PUNISHMENT_ROLE } from "./punishSystem";
+import { onQuestProgress } from "./questSystem";
 
 const XP_COOLDOWN = 60_000;
 const XP_MIN = 15;
 const XP_MAX = 25;
 const VOICE_XP_GAIN = 20;
+const COINS_PER_MSG_MIN = 8;
+const COINS_PER_MSG_MAX = 15;
+const COINS_PER_VOICE_TICK = 12;
 
 export const LEVEL_ROLES: { level: number; name: string }[] = [
   { level: 50, name: "⚜️・nv 50+" },
@@ -79,12 +83,10 @@ async function updateMemberRoles(member: GuildMember, level: number) {
 }
 
 async function findLevelUpChannel(guild: Guild): Promise<TextChannel | null> {
-  // Priorité : ⌨️ • cmds (ou tout salon contenant "cmds")
   const cmds = guild.channels.cache.find(
     (c) => c.type === ChannelType.GuildText && c.name.toLowerCase().includes("cmds")
   ) as TextChannel | undefined;
   if (cmds) return cmds;
-  // Fallback : général / general / chat
   return (guild.channels.cache.find(
     (c) =>
       c.type === ChannelType.GuildText &&
@@ -98,7 +100,7 @@ function autoDelete(msg: { delete: () => Promise<unknown> }, ms = 10_000) {
   setTimeout(() => msg.delete().catch(() => {}), ms);
 }
 
-// ── XP par message ────────────────────────────────────────────────────────────
+// ── XP par message ─────────────────────────────────────────────────────────
 
 export async function handleXP(member: GuildMember) {
   if (await isPunished(member.guild.id, member.id)) return;
@@ -121,6 +123,12 @@ export async function handleXP(member: GuildMember) {
 
   await upsertXP(guildId, userId, user.xp, user.level, user.lastMessage);
 
+  // Pièces + quêtes
+  const coinGain = Math.floor(Math.random() * (COINS_PER_MSG_MAX - COINS_PER_MSG_MIN + 1)) + COINS_PER_MSG_MIN;
+  await addCoins(guildId, userId, coinGain).catch(() => {});
+  await onQuestProgress(member, "messages", 1).catch(() => {});
+  await onQuestProgress(member, "xp", gain).catch(() => {});
+
   if (leveledUp) {
     await updateMemberRoles(member, newLevel);
     const ch = await findLevelUpChannel(member.guild);
@@ -130,7 +138,9 @@ export async function handleXP(member: GuildMember) {
           new EmbedBuilder()
             .setColor(0xffd700)
             .setTitle("🎉 Niveau supérieur !")
-            .setDescription(`${member} vient d'atteindre le **niveau ${newLevel}** !`)
+            .setDescription(
+              `${member} vient d'atteindre le **niveau ${newLevel}** !`
+            )
             .addFields({ name: "Nouveau rôle", value: getRoleName(newLevel) })
             .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp(),
@@ -141,8 +151,6 @@ export async function handleXP(member: GuildMember) {
     logger.info(`${member.user.tag} → niveau ${newLevel}`);
   }
 }
-
-// ── XP vocal (appelé toutes les 10 min) ──────────────────────────────────────
 
 const voiceStartMap = new Map<string, number>();
 
@@ -184,6 +192,11 @@ export async function processVoiceXP(guild: Guild) {
 
     await upsertXP(guildId, userId, user.xp, user.level, user.lastMessage);
 
+    // Pièces + quêtes vocal (tick = 10 min)
+    await addCoins(guildId, userId, COINS_PER_VOICE_TICK).catch(() => {});
+    await onQuestProgress(member, "voice_minutes", 10).catch(() => {});
+    await onQuestProgress(member, "xp", VOICE_XP_GAIN).catch(() => {});
+
     if (leveledUp) {
       await updateMemberRoles(member, newLevel);
       const ch = await findLevelUpChannel(guild);
@@ -209,8 +222,6 @@ export async function processVoiceXP(guild: Guild) {
     voiceStartMap.set(key, now);
   }
 }
-
-// ── Init membre ───────────────────────────────────────────────────────────────
 
 export async function initMemberXP(member: GuildMember) {
   const guildId = member.guild.id;
