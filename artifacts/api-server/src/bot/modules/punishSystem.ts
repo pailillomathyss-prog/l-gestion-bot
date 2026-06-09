@@ -6,7 +6,6 @@ import {
   TextChannel,
   ChannelType,
   Role,
-  Guild,
 } from "discord.js";
 import { logger } from "../../lib/logger";
 import {
@@ -54,16 +53,6 @@ export function containsBannedWord(content: string): string | null {
   return null;
 }
 
-function isJugementName(name: string): boolean {
-  const n = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  return (
-    n.includes("jugement") ||
-    n.includes("jugment") ||
-    n.includes("prison") ||
-    n.includes("sanction")
-  );
-}
-
 async function ensurePunishRole(member: GuildMember): Promise<Role | null> {
   await member.guild.roles.fetch();
   let role = member.guild.roles.cache.find((r) => r.name === PUNISHMENT_ROLE);
@@ -82,52 +71,6 @@ async function ensurePunishRole(member: GuildMember): Promise<Role | null> {
     }
   }
   return role;
-}
-
-/**
- * Applique les permissions du rôle puni sur TOUS les salons :
- *  - Salons ⚖️ JUGEMENT (catégorie ou nom) → ViewChannel: true
- *  - Tous les autres → ViewChannel: false
- * Appelé à chaque sanction pour garantir la cohérence.
- */
-export async function applyPunishPermissions(guild: Guild, punishRole: Role): Promise<void> {
-  await guild.channels.fetch();
-  let jugementCount = 0;
-
-  for (const [, ch] of guild.channels.cache) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const parentName: string = (ch as any).parent?.name ?? "";
-    const isJugement = isJugementName(ch.name) || isJugementName(parentName);
-
-    const isTextLike =
-      ch.type === ChannelType.GuildText ||
-      ch.type === ChannelType.GuildAnnouncement ||
-      ch.type === ChannelType.GuildForum;
-    const isVoiceLike =
-      ch.type === ChannelType.GuildVoice ||
-      ch.type === ChannelType.GuildStageVoice;
-
-    try {
-      if (isJugement) {
-        jugementCount++;
-        await ch.permissionOverwrites.edit(punishRole, {
-          ViewChannel: true,
-          SendMessages: isTextLike ? true : null,
-          Connect: isVoiceLike ? true : null,
-          ReadMessageHistory: true,
-          AddReactions: true,
-        });
-      } else {
-        await ch.permissionOverwrites.edit(punishRole, {
-          ViewChannel: false,
-        });
-      }
-    } catch {
-      // Permission insuffisante sur ce salon — ignoré
-    }
-  }
-
-  logger.info(`🪫 Permissions punition appliquées — ${jugementCount} salon(s) JUGEMENT détectés`);
 }
 
 async function findPunishChannel(guild: { channels: { cache: Map<string, { type: number; name: string }> } }): Promise<TextChannel | null> {
@@ -178,8 +121,6 @@ export async function applyPunishment(
 
   const punishRole = await ensurePunishRole(member);
   if (punishRole) {
-    // Met à jour les permissions de TOUS les salons pour ce rôle
-    await applyPunishPermissions(member.guild, punishRole);
     await member.roles.add(punishRole).catch(() => {});
   }
 
