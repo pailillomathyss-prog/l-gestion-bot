@@ -1,26 +1,48 @@
 import postgres from "postgres";
 import { logger } from "../../lib/logger";
 
-let _sql: ReturnType<typeof postgres> | null = null;
+// ── Connexion PostgreSQL (optionnelle) ────────────────────────────────────────
 
-function getSql() {
-  if (!_sql) {
-    const url = process.env["DATABASE_URL"];
-    if (!url) throw new Error("DATABASE_URL manquant — configure la variable sur Railway");
+let _sql: ReturnType<typeof postgres> | null = null;
+let _dbAvailable = false;
+
+function getSql(): ReturnType<typeof postgres> | null {
+  if (_sql) return _sql;
+  const url = process.env["DATABASE_URL"];
+  if (!url) return null;
+  try {
     _sql = postgres(url, { max: 5, idle_timeout: 30 });
+    _dbAvailable = true;
+    return _sql;
+  } catch {
+    return null;
   }
-  return _sql;
 }
+
+// ── Fallback mémoire (si pas de DATABASE_URL) ─────────────────────────────────
+
+const memXP   = new Map<string, XPRow>();            // key: guildId:userId
+const memPunish = new Map<string, PunishRow>();       // key: guildId:userId
+const memState  = new Map<string, string>();          // key: arbitrary
+
+function xpKey(guildId: string, userId: string) { return `${guildId}:${userId}`; }
+function punKey(guildId: string, userId: string) { return `${guildId}:${userId}`; }
+
+// ── Tables ────────────────────────────────────────────────────────────────────
 
 export async function ensureTables() {
   const sql = getSql();
+  if (!sql) {
+    logger.warn("DATABASE_URL absent — fonctionnement en mémoire (XP non persisté entre redémarrages)");
+    return;
+  }
   await sql`
     CREATE TABLE IF NOT EXISTS xp_data (
-      guild_id    TEXT    NOT NULL,
-      user_id     TEXT    NOT NULL,
-      xp          INTEGER NOT NULL DEFAULT 0,
-      level       INTEGER NOT NULL DEFAULT 0,
-      last_message BIGINT NOT NULL DEFAULT 0,
+      guild_id     TEXT    NOT NULL,
+      user_id      TEXT    NOT NULL,
+      xp           INTEGER NOT NULL DEFAULT 0,
+      level        INTEGER NOT NULL DEFAULT 0,
+      last_message BIGINT  NOT NULL DEFAULT 0,
       PRIMARY KEY (guild_id, user_id)
     )
   `;
@@ -54,9 +76,9 @@ export interface XPRow {
 
 export async function getXP(guildId: string, userId: string): Promise<XPRow> {
   const sql = getSql();
+  if (!sql) return memXP.get(xpKey(guildId, userId)) ?? { xp: 0, level: 0, lastMessage: 0 };
   const rows = await sql<{ xp: number; level: number; last_message: string }[]>`
-    SELECT xp, level, last_message
-    FROM xp_data
+    SELECT xp, level, last_message FROM xp_data
     WHERE guild_id = ${guildId} AND user_id = ${userId}
   `;
   if (!rows[0]) return { xp: 0, level: 0, lastMessage: 0 };
@@ -64,13 +86,11 @@ export async function getXP(guildId: string, userId: string): Promise<XPRow> {
 }
 
 export async function upsertXP(
-  guildId: string,
-  userId: string,
-  xp: number,
-  level: number,
-  lastMessage: number
+  guildId: string, userId: string,
+  xp: number, level: number, lastMessage: number
 ) {
   const sql = getSql();
+  if (!sql) { memXP.set(xpKey(guildId, userId), { xp, level, lastMessage }); return; }
   await sql`
     INSERT INTO xp_data (guild_id, user_id, xp, level, last_message)
     VALUES (${guildId}, ${userId}, ${xp}, ${level}, ${lastMessage})
@@ -79,21 +99,20 @@ export async function upsertXP(
   `;
 }
 
-export async function getAllXP(
-  guildId: string
-): Promise<Array<{ userId: string } & XPRow>> {
+export async function getAllXP(guildId: string): Promise<Array<{ userId: string } & XPRow>> {
   const sql = getSql();
+  if (!sql) {
+    return [...memXP.entries()]
+      .filter(([k]) => k.startsWith(`${guildId}:`))
+      .map(([k, v]) => ({ userId: k.split(":")[1], ...v }))
+      .sort((a, b) => b.xp - a.xp);
+  }
   const rows = await sql<{ user_id: string; xp: number; level: number; last_message: string }[]>`
-    SELECT user_id, xp, level, last_message
-    FROM xp_data
-    WHERE guild_id = ${guildId}
-    ORDER BY xp DESC
+    SELECT user_id, xp, level, last_message FROM xp_data
+    WHERE guild_id = ${guildId} ORDER BY xp DESC
   `;
   return rows.map((r) => ({
-    userId: r.user_id,
-    xp: r.xp,
-    level: r.level,
-    lastMessage: Number(r.last_message),
+    userId: r.user_id, xp: r.xp, level: r.level, lastMessage: Number(r.last_message),
   }));
 }
 
@@ -106,19 +125,13 @@ export interface PunishRow {
   reason: string;
 }
 
-export async function getPunishment(
-  guildId: string,
-  userId: string
-): Promise<PunishRow | null> {
+export async function getPunishment(guildId: string, userId: string): Promise<PunishRow | null> {
   const sql = getSql();
+  if (!sql) return memPunish.get(punKey(guildId, userId)) ?? null;
   const rows = await sql<{
-    roles: string;
-    punished_at: string;
-    expires_at: string;
-    reason: string;
+    roles: string; punished_at: string; expires_at: string; reason: string;
   }[]>`
-    SELECT roles, punished_at, expires_at, reason
-    FROM punishments
+    SELECT roles, punished_at, expires_at, reason FROM punishments
     WHERE guild_id = ${guildId} AND user_id = ${userId}
   `;
   if (!rows[0]) return null;
@@ -130,19 +143,13 @@ export async function getPunishment(
   };
 }
 
-export async function setPunishment(
-  guildId: string,
-  userId: string,
-  record: PunishRow
-) {
+export async function setPunishment(guildId: string, userId: string, record: PunishRow) {
   const sql = getSql();
+  if (!sql) { memPunish.set(punKey(guildId, userId), record); return; }
   await sql`
     INSERT INTO punishments (guild_id, user_id, roles, punished_at, expires_at, reason)
-    VALUES (
-      ${guildId}, ${userId},
-      ${JSON.stringify(record.roles)},
-      ${record.punishedAt}, ${record.expiresAt}, ${record.reason}
-    )
+    VALUES (${guildId}, ${userId}, ${JSON.stringify(record.roles)},
+            ${record.punishedAt}, ${record.expiresAt}, ${record.reason})
     ON CONFLICT (guild_id, user_id) DO UPDATE
     SET roles = ${JSON.stringify(record.roles)},
         punished_at = ${record.punishedAt},
@@ -153,24 +160,24 @@ export async function setPunishment(
 
 export async function deletePunishment(guildId: string, userId: string) {
   const sql = getSql();
+  if (!sql) { memPunish.delete(punKey(guildId, userId)); return; }
   await sql`DELETE FROM punishments WHERE guild_id = ${guildId} AND user_id = ${userId}`;
 }
 
-export async function getAllPunishments(): Promise<
-  Array<{ guildId: string; userId: string } & PunishRow>
-> {
+export async function getAllPunishments(): Promise<Array<{ guildId: string; userId: string } & PunishRow>> {
   const sql = getSql();
+  if (!sql) {
+    return [...memPunish.entries()].map(([k, v]) => {
+      const [guildId, userId] = k.split(":");
+      return { guildId, userId, ...v };
+    });
+  }
   const rows = await sql<{
-    guild_id: string;
-    user_id: string;
-    roles: string;
-    punished_at: string;
-    expires_at: string;
-    reason: string;
+    guild_id: string; user_id: string; roles: string;
+    punished_at: string; expires_at: string; reason: string;
   }[]>`SELECT * FROM punishments`;
   return rows.map((r) => ({
-    guildId: r.guild_id,
-    userId: r.user_id,
+    guildId: r.guild_id, userId: r.user_id,
     roles: JSON.parse(r.roles),
     punishedAt: Number(r.punished_at),
     expiresAt: Number(r.expires_at),
@@ -178,10 +185,11 @@ export async function getAllPunishments(): Promise<
   }));
 }
 
-// ── Bot state (rules message ID etc.) ────────────────────────────────────────
+// ── Bot state ─────────────────────────────────────────────────────────────────
 
 export async function getState(key: string): Promise<string | null> {
   const sql = getSql();
+  if (!sql) return memState.get(key) ?? null;
   const rows = await sql<{ value: string }[]>`
     SELECT value FROM bot_state WHERE key = ${key}
   `;
@@ -190,6 +198,7 @@ export async function getState(key: string): Promise<string | null> {
 
 export async function setState(key: string, value: string) {
   const sql = getSql();
+  if (!sql) { memState.set(key, value); return; }
   await sql`
     INSERT INTO bot_state (key, value) VALUES (${key}, ${value})
     ON CONFLICT (key) DO UPDATE SET value = ${value}
