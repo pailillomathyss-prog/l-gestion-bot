@@ -54,7 +54,7 @@ function isReadOnlyChannel(name: string) {
   return READ_ONLY_CHANNELS.includes(name);
 }
 
-/** Vérifie si un nom de salon/catégorie appartient à la zone jugement */
+/** Salons de la catégorie jugement — le bot ne touche pas à leurs permissions */
 function isJugementChannel(name: string) {
   const n = normalize(name);
   return n.includes("jugement") || n.includes("jugment") || n.includes("prison") || n.includes("sanction");
@@ -114,12 +114,17 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
       continue;
     }
 
-    // ← FIX : vérifie aussi le nom de la catégorie parente
-    const parentName = (channel as { parent?: { name: string } | null }).parent?.name ?? "";
-    const isJugement  = isJugementChannel(channel.name) || isJugementChannel(parentName);
-    const isRules     = isRulesChannel(channel.name);
-    const isReadOnly  = isReadOnlyChannel(channel.name);
-    const isTextLike  = (
+    // Les salons JUGEMENT (et leur catégorie) sont configurés manuellement — on ne touche pas
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parentName: string = (channel as any).parent?.name ?? "";
+    if (isJugementChannel(channel.name) || isJugementChannel(parentName)) {
+      skipped++;
+      continue;
+    }
+
+    const isRules    = isRulesChannel(channel.name);
+    const isReadOnly = isReadOnlyChannel(channel.name);
+    const isTextLike = (
       channel.type === ChannelType.GuildText ||
       channel.type === ChannelType.GuildAnnouncement ||
       channel.type === ChannelType.GuildForum
@@ -130,21 +135,7 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
     );
 
     try {
-      if (isJugement) {
-        // ⚖️ JUGEMENT → SEULEMENT visible par 🪫
-        await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
-        await channel.permissionOverwrites.edit(nouveauxRole, { ViewChannel: false });
-        if (punishRole) {
-          await channel.permissionOverwrites.edit(punishRole, {
-            ViewChannel: true,
-            SendMessages: isTextLike ? true : null,
-            Connect: isVoiceLike ? true : null,
-            ReadMessageHistory: true,
-            AddReactions: true,
-          });
-        }
-
-      } else if (isRules || isReadOnly) {
+      if (isRules || isReadOnly) {
         await channel.permissionOverwrites.edit(everyone, {
           ViewChannel: true,
           SendMessages: false,
@@ -160,7 +151,6 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
         if (punishRole) {
           await channel.permissionOverwrites.edit(punishRole, { ViewChannel: false });
         }
-
       } else {
         await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
         await channel.permissionOverwrites.edit(nouveauxRole, {
@@ -181,7 +171,7 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
   }
 
   logger.info(
-    `✅ Permissions sync sur "${guild.name}" — ${synced} salons, ${skipped} staff ignorés`
+    `✅ Permissions sync sur "${guild.name}" — ${synced} salons, ${skipped} ignorés`
   );
 }
 
