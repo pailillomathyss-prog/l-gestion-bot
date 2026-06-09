@@ -18,7 +18,7 @@ import { syncPermsCommand } from "../commands/syncperms";
 import { coinflipCommand, slotCommand } from "../commands/games";
 import { shopCommand, buyCommand, balanceCommand } from "../commands/shop";
 import { giveawayCommand } from "../commands/giveaway";
-import { getMyQuestProgress, claimQuest } from "../modules/questSystem";
+import { getMyQuestProgress, claimQuest, forceNewQuestForGuild } from "../modules/questSystem";
 import { getCoins } from "../modules/db";
 
 const PREFIX = "!";
@@ -227,6 +227,20 @@ export async function handleMessage(message: Message) {
       case "postregle":
       case "postregler":
         await postGamesRules(message);
+        break;
+      case "nouvellequete":
+      case "nouvellequête":
+      case "resetquete":
+      case "resetquest":
+        if (!message.guild) break;
+        await message.reply("🔄 Changement de quête en cours...").catch(() => {});
+        try {
+          const { questLabel } = await forceNewQuestForGuild(message.guild);
+          await message.reply(`✅ Nouvelle quête lancée : **${questLabel}**`).catch(() => {});
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          await message.reply(`❌ Erreur : ${errMsg}`).catch(() => {});
+        }
         break;
       default:
         break;
