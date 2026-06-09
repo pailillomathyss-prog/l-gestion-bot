@@ -19,13 +19,24 @@ export function setRulesMessageId(id: string) {
 const NOUVEAUX_ROLE    = "⏳・nouveaux";
 const PUNISHMENT_ROLE  = "🪫 • CONTRE LES RÈGLES";
 
-const READ_ONLY_CHANNELS = [
-  "⛩️・annonce",
-  "⚡・giveaway",
-  "☎️・événement",
-  "💎・boost",
-  "🎯・règlement",
-  "🌏・bienvenue",
+const READ_ONLY_KEYWORDS = [
+  "annonce",
+  "giveaway",
+  "evenement",
+  "event",
+  "boost",
+  "bienvenue",
+  "reglement",
+  "rules",
+  "regles",
+  "regle",
+  "levels",
+  "level",
+  "quetes",
+  "quete",
+  "jeux",
+  "shop",
+  "boutique",
 ];
 
 function normalize(s: string) {
@@ -51,7 +62,8 @@ function isStaffChannel(name: string) {
 }
 
 function isReadOnlyChannel(name: string) {
-  return READ_ONLY_CHANNELS.includes(name);
+  const n = normalize(name);
+  return READ_ONLY_KEYWORDS.some((kw) => n.includes(kw));
 }
 
 /** Salons de la catégorie jugement — le bot ne touche RIEN dans ces salons */
