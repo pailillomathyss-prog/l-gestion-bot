@@ -45,6 +45,7 @@ import {
 } from "./commands/shop";
 import { handleGameButton, handleGameSelect, postGameMenuIfNeeded } from "./modules/gameSystem";
 import { claimQuest } from "./modules/questSystem";
+import { postDailyMenuIfNeeded, handleDailyClaim, handleDailyStreak } from "./modules/dailySystem";
 
 export const client = new Client({
   intents: [
@@ -156,6 +157,9 @@ client.once(Events.ClientReady, async (c) => {
     // ── Auto-post menu jeux ────────────────────────────────────────────────
     await postGameMenuIfNeeded(guild, c.user.id);
 
+    // ── Auto-post menu daily ───────────────────────────────────────────────
+    await postDailyMenuIfNeeded(guild, c.user.id);
+
     logger.info(`✅ Initialisation complète du serveur "${guild.name}"`);
   }
 
@@ -206,6 +210,8 @@ client.once(Events.ClientReady, async (c) => {
   logger.info("🎯 Quest system actif");
   logger.info("🧸 Shop system avec boutons actif");
   logger.info("🎮 Games system actif (Casino, Coin Flip, Duel 1v1)");
+  logger.info("🎁 Daily reward system actif");
+  logger.info("🏅 Badge system actif");
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
@@ -405,6 +411,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setTimestamp();
         btn.message.edit({ embeds: [embed] }).catch(() => {});
       }
+    }
+    return;
+  }
+
+  // Boutons daily
+  if (interaction.isButton() && (interaction.customId === "daily_claim" || interaction.customId === "daily_streak")) {
+    const btn = interaction as ButtonInteraction;
+    if (interaction.customId === "daily_claim") {
+      await handleDailyClaim(btn).catch(async (err) => {
+        logger.error({ err }, "Erreur handleDailyClaim");
+        const reply = { content: "❌ Une erreur est survenue.", ephemeral: true };
+        if (btn.replied || btn.deferred) await btn.followUp(reply).catch(() => {});
+        else await btn.reply(reply).catch(() => {});
+      });
+    } else {
+      await handleDailyStreak(btn).catch(async (err) => {
+        logger.error({ err }, "Erreur handleDailyStreak");
+        const reply = { content: "❌ Une erreur est survenue.", ephemeral: true };
+        if (btn.replied || btn.deferred) await btn.followUp(reply).catch(() => {});
+        else await btn.reply(reply).catch(() => {});
+      });
     }
     return;
   }
