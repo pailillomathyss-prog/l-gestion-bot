@@ -1,4 +1,4 @@
-import { Message, PermissionFlagsBits } from "discord.js";
+import { Message, PermissionFlagsBits, EmbedBuilder, ChannelType } from "discord.js";
 import { logger } from "../../lib/logger";
 import { antiLink } from "../modules/antiLink";
 import { handleXP } from "../modules/expSystem";
@@ -15,8 +15,77 @@ import { warnStatusCommand } from "../commands/warnStatus";
 import { pardonCommand } from "../commands/pardon";
 import { restoreXpCommand } from "../commands/restorexp";
 import { syncPermsCommand } from "../commands/syncperms";
+import { coinflipCommand, slotCommand } from "../commands/games";
+import { shopCommand, buyCommand, balanceCommand } from "../commands/shop";
+import { giveawayCommand } from "../commands/giveaway";
+import { getMyQuestProgress, claimQuest } from "../modules/questSystem";
+import { getCoins } from "../modules/db";
 
 const PREFIX = "!";
+
+async function postGamesRules(message: Message) {
+  if (!message.guild) return;
+  // Cherche le salon "règles" (pas le règlement général, mais le salon règles des jeux)
+  const jeux = message.guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && (c.name.toLowerCase().includes("règles") || c.name.toLowerCase().includes("regles"))
+  );
+  if (!jeux || jeux.type !== ChannelType.GuildText) {
+    await message.reply("❌ Salon `règles` introuvable.").catch(() => {});
+    return;
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2f3136)
+    .setTitle("🎰 Jeux de pièces — Règles & Commandes")
+    .setDescription(
+      "Gagne des pièces en chattant et en vocal, puis mise les dans les jeux !\n" +
+      "Les jeux sont **uniquement** disponibles dans le salon **jeux**."
+    )
+    .addFields(
+      {
+        name: "🪙 Comment gagner des pièces ?",
+        value:
+          "• En envoyant des messages (8–15 🪙 par message, cooldown 1 min)\n" +
+          "• En étant en vocal (12 🪙 toutes les 10 min)\n" +
+          "• En complétant des quêtes (150–700 🪙)",
+      },
+      {
+        name: "🎲 Jeux disponibles",
+        value:
+          "**`!coinflip [mise]`** — Pile ou face. Gagne ou perds ta mise (50/50).\n" +
+          "**`!slot [mise]`** — Machine à sous. Deux identiques = x1.5 — Trois identiques = x2 à x20 selon le symbole !",
+      },
+      {
+        name: "🏪 Boutique de rôles (`!shop`)",
+        value:
+          "Dépense tes pièces pour obtenir un rôle exclusif dans le salon **rôles** !\n" +
+          "🌴・aventurier — 500 🪙\n" +
+          "⛰️・roi2lajungle — 2 500 🪙\n" +
+          "🎠・perturbateur — 8 000 🪙\n" +
+          "💎・roi2monarch — 20 000 🪙",
+      },
+      {
+        name: "📜 Autres commandes",
+        value:
+          "**`!balance`** — Voir ton solde de pièces\n" +
+          "**`!progression`** — Voir ta progression sur la quête active\n" +
+          "**`!claim`** — Réclamer la récompense d'une quête complétée",
+      },
+      {
+        name: "⚠️ Règles",
+        value:
+          "• Mise minimale : **10 🪙**\n" +
+          "• On ne peut pas miser plus que son solde\n" +
+          "• Les jeux sont réservés au salon **jeux**\n" +
+          "• Le shop est réservé au salon **rôles**",
+      },
+    )
+    .setFooter({ text: "MAI•GESTION • Bonne chance !" })
+    .setTimestamp();
+
+  await (jeux as import("discord.js").TextChannel).send({ embeds: [embed] });
+  await message.reply(`✅ Message posté dans <#${jeux.id}>`).catch(() => {});
+}
 
 export async function handleMessage(message: Message) {
   if (message.author.bot) return;
@@ -46,7 +115,7 @@ export async function handleMessage(message: Message) {
   const command = args.shift()?.toLowerCase();
   if (!command) return;
 
-  // ── Commandes accessibles à TOUT le monde ────────────────────────────────
+  // ── Commandes accessibles à TOUT le monde ───────────────────────────────
   try {
     switch (command) {
       case "rank":
@@ -67,6 +136,45 @@ export async function handleMessage(message: Message) {
       case "sanction":
         await warnStatusCommand(message, args);
         return;
+      // ── Économie ────────────────────────────────────────────────────────
+      case "balance":
+      case "solde":
+      case "pieces":
+      case "pièces":
+        await balanceCommand(message);
+        return;
+      case "shop":
+      case "boutique":
+        await shopCommand(message);
+        return;
+      case "buy":
+      case "acheter":
+        await buyCommand(message, args);
+        return;
+      // ── Jeux ────────────────────────────────────────────────────────────
+      case "coinflip":
+      case "cf":
+        await coinflipCommand(message, args);
+        return;
+      case "slot":
+      case "slots":
+        await slotCommand(message, args);
+        return;
+      // ── Quêtes ──────────────────────────────────────────────────────────
+      case "progression":
+      case "quête":
+      case "quete":
+      case "quest":
+        if (!message.member) return;
+        await message.reply({ embeds: [await getMyQuestProgress(message.member)] }).catch(() => {});
+        return;
+      case "claim":
+      case "réclamer":
+      case "reclamer":
+        if (!message.member) return;
+        const result = await claimQuest(message.member);
+        await message.reply(result.message).catch(() => {});
+        return;
     }
   } catch (err) {
     logger.error({ err }, `Erreur commande publique: ${command}`);
@@ -74,7 +182,7 @@ export async function handleMessage(message: Message) {
     return;
   }
 
-  // ── Commandes réservées aux administrateurs ───────────────────────────────
+  // ── Commandes réservées aux administrateurs ──────────────────────────────
   if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
 
   try {
@@ -111,6 +219,14 @@ export async function handleMessage(message: Message) {
         break;
       case "syncperms":
         await syncPermsCommand(message);
+        break;
+      case "giveaway":
+        await giveawayCommand(message, args);
+        break;
+      case "postrules":
+      case "postregle":
+      case "postregler":
+        await postGamesRules(message);
         break;
       default:
         break;
