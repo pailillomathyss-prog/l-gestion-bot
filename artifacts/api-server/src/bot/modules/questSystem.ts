@@ -1,4 +1,4 @@
-import { Client, Guild, EmbedBuilder, TextChannel, ChannelType, GuildMember } from "discord.js";
+import { Client, Guild, EmbedBuilder, TextChannel, ChannelType, GuildMember, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import { logger } from "../../lib/logger";
 import { getQuestState, setQuestState, updateQuestMessageId, getQuestProgress, upsertQuestProgress, getAllQuestProgress, addCoins, QuestStateRow } from "./db";
 
@@ -57,8 +57,23 @@ export async function buildQuestEmbed(guild: Guild, quest: QuestStateRow, endsAt
       { name: "⏰ Expire", value: `<t:${Math.floor(endsAt / 1000)}:R>`, inline: true },
       { name: "📊 Progression (top 5)", value: progressLines },
     )
-    .setFooter({ text: "MAI•GESTION • Tape !progression pour voir ta progression • !claim pour réclamer" })
+    .setFooter({ text: "MAI•GESTION • Complète la quête puis clique sur Réclamer !" })
     .setTimestamp();
+}
+
+export function buildQuestComponents(): ActionRowBuilder<ButtonBuilder>[] {
+  return [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId("quest_claim")
+        .setLabel("🎁 Réclamer ma récompense")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("quest_progress")
+        .setLabel("📊 Ma progression")
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  ];
 }
 
 export async function startNewQuest(client: Client) {
@@ -83,7 +98,7 @@ export async function startNewQuest(client: Client) {
       if (!ch) { logger.warn(`Salon quêtes introuvable sur ${guild.name}`); continue; }
 
       const embed = await buildQuestEmbed(guild, questState, endsAt);
-      const msg = await ch.send({ embeds: [embed] });
+      const msg = await ch.send({ embeds: [embed], components: buildQuestComponents() });
       await updateQuestMessageId(guild.id, msg.id);
 
       logger.info(`🎯 Nouvelle quête "${quest.id}" sur ${guild.name}`);
@@ -107,7 +122,7 @@ export async function updateQuestMessage(guild: Guild) {
     const msg = await ch.messages.fetch(questState.messageId).catch(() => null);
     if (!msg) return;
     const embed = await buildQuestEmbed(guild, questState, endsAt);
-    await msg.edit({ embeds: [embed] });
+    await msg.edit({ embeds: [embed], components: buildQuestComponents() });
   } catch { /* ignoré */ }
 }
 
