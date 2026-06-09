@@ -13,6 +13,7 @@ import { leaderboardCommand } from "../commands/leaderboard";
 import { helpCommand } from "../commands/help";
 import { warnStatusCommand } from "../commands/warnStatus";
 import { pardonCommand } from "../commands/pardon";
+import { restoreXpCommand } from "../commands/restorexp";
 
 const PREFIX = "!";
 
@@ -20,10 +21,8 @@ export async function handleMessage(message: Message) {
   if (message.author.bot) return;
   if (!message.guild) return;
 
-  // Messages système Discord (boosts, etc.)
   await handleBoostMessage(message).catch(() => {});
 
-  // ── Filtre des gros mots ──────────────────────────────────────────────────
   if (message.member) {
     const badWord = containsBannedWord(message.content);
     if (badWord) {
@@ -104,6 +103,10 @@ export async function handleMessage(message: Message) {
         break;
       case "pardon":
         await pardonCommand(message, args);
+        break;
+      case "restorexp":
+      case "restoreexp":
+        await restoreXpCommand(message);
         break;
       default:
         break;
