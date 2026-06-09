@@ -32,10 +32,10 @@ import { initPunishments } from "./modules/punishSystem";
 import { registerSlashCommands } from "./slash/register";
 import { handleSlashCommand } from "./slash/handler";
 import { getSavedRulesMessageId } from "./state";
-import { ensureTables, getCoins, addCoins } from "./modules/db";
+
 import { resumeGiveaways } from "./modules/giveawaySystem";
-import { startNewQuest, getQuestState } from "./modules/questSystem";
-import { joinGiveaway, getActiveGiveaways } from "./modules/db";
+import { startNewQuest } from "./modules/questSystem";
+import { ensureTables, getCoins, addCoins, getQuestState, joinGiveaway, getActiveGiveaways } from "./modules/db";
 import {
   SHOP_ROLES,
   buildGenericShopEmbed,
