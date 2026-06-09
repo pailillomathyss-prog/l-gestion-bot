@@ -317,11 +317,24 @@ async function startDuelPick(channel: TextChannel, challenger: GuildMember, guil
 
 // ── Duel — Envoi du défi après sélection ─────────────────────────────────────
 async function sendDuelChallenge(channel: TextChannel, challenger: GuildMember, opponent: GuildMember, guildId: string, bet: number) {
-  await channel.permissionOverwrites.edit(opponent.id, {
-    ViewChannel: true,
-    SendMessages: true,
-    ReadMessageHistory: true,
-  }).catch(() => {});
+  try {
+    await channel.permissionOverwrites.edit(opponent.id, {
+      ViewChannel: true,
+      SendMessages: true,
+      ReadMessageHistory: true,
+    });
+    logger.info(`✅ Permissions duel accordées à ${opponent.user.username}`);
+  } catch (err) {
+    logger.error({ err }, `Impossible d'accorder les permissions duel à ${opponent.user.username}`);
+    await channel.send({
+      embeds: [
+        new EmbedBuilder().setColor(0xff4444).setTitle("❌ Erreur de permissions")
+          .setDescription(`Impossible d'inviter ${opponent} dans ce salon. Vérifie les permissions du bot.`)
+          .setFooter({ text: "MAI•GESTION" }),
+      ],
+    });
+    return;
+  }
 
   activeDuels.set(channel.id, { challengerId: challenger.id, bet });
 
@@ -347,11 +360,11 @@ async function sendDuelChallenge(channel: TextChannel, challenger: GuildMember, 
     components: [
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
-          .setCustomId(`game_duel_join:${challenger.id}:${bet}`)
+          .setCustomId(`game_duel_join:${challenger.id}:${opponent.id}:${bet}`)
           .setLabel("⚔️ Accepter le duel")
           .setStyle(ButtonStyle.Danger),
         new ButtonBuilder()
-          .setCustomId("game_quit")
+          .setCustomId(`game_duel_decline:${challenger.id}`)
           .setLabel("❌ Refuser")
           .setStyle(ButtonStyle.Secondary),
       ),
@@ -538,10 +551,16 @@ export async function handleGameButton(btn: ButtonInteraction): Promise<void> {
   if (id.startsWith("game_duel_join:")) {
     const parts = id.split(":");
     const challengerId = parts[1] as string;
-    const bet = parseInt(parts[2] as string);
+    const opponentId = parts[2] as string;
+    const bet = parseInt(parts[3] as string);
 
     if (member.id === challengerId) {
-      await btn.reply({ content: "❌ Tu ne peux pas te défier toi-même !", ephemeral: true });
+      await btn.reply({ content: "❌ Tu ne peux pas accepter ton propre défi !", ephemeral: true });
+      return;
+    }
+
+    if (member.id !== opponentId) {
+      await btn.reply({ content: "❌ Ce duel ne te concerne pas.", ephemeral: true });
       return;
     }
 
@@ -557,20 +576,38 @@ export async function handleGameButton(btn: ButtonInteraction): Promise<void> {
     return;
   }
 
+  // ── Refus du duel ─────────────────────────────────────────────────────────
+  if (id.startsWith("game_duel_decline:")) {
+    const challengerId = id.split(":")[1] as string;
+    await btn.deferUpdate();
+    const ch = btn.channel as TextChannel;
+    await ch.send({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x888888)
+          .setTitle("❌ Duel refusé")
+          .setDescription(`${member} a refusé le duel.\n\nCe salon sera supprimé dans **5 secondes**...`)
+          .setFooter({ text: "MAI•GESTION" }),
+      ],
+    });
+    setTimeout(() => ch.delete().catch(() => {}), 5000);
+    return;
+  }
+
   // ── Revanche duel ─────────────────────────────────────────────────────────
   if (id.startsWith("game_duel_rematch:")) {
     const parts = id.split(":");
-    const targetId = parts[1] as string;
+    const opponentId = parts[1] as string;
     const bet = parseInt(parts[2] as string);
     await btn.deferUpdate();
 
-    const target = await btn.guild.members.fetch(targetId).catch(() => null) as GuildMember | null;
-    if (!target) {
+    const opponent = await btn.guild.members.fetch(opponentId).catch(() => null) as GuildMember | null;
+    if (!opponent) {
       await btn.followUp({ content: "❌ Joueur introuvable.", ephemeral: true });
       return;
     }
 
-    await startDuelPick(btn.channel as TextChannel, member, btn.guild.id, bet);
+    await sendDuelChallenge(btn.channel as TextChannel, member, opponent, btn.guild.id, bet);
     return;
   }
 
