@@ -9,6 +9,8 @@ import { lockCommand, unlockCommand } from "../commands/lock";
 import { muteCommand, demuteCommand } from "../commands/mute";
 import { clearCommand } from "../commands/clear";
 import { rankCommand } from "../commands/rank";
+import { leaderboardCommand } from "../commands/leaderboard";
+import { helpCommand } from "../commands/help";
 import { warnStatusCommand } from "../commands/warnStatus";
 import { pardonCommand } from "../commands/pardon";
 
@@ -28,7 +30,7 @@ export async function handleMessage(message: Message) {
       await applyPunishment(message.member, message, badWord).catch((err) =>
         logger.error({ err }, "Erreur applyPunishment")
       );
-      return; // message supprimé, on arrête le traitement
+      return;
     }
   }
 
@@ -51,6 +53,15 @@ export async function handleMessage(message: Message) {
       case "level":
       case "xp":
         await rankCommand(message, args);
+        return;
+      case "leaderboard":
+      case "lb":
+      case "top":
+        await leaderboardCommand(message);
+        return;
+      case "help":
+      case "aide":
+        await helpCommand(message);
         return;
       case "warn":
       case "sanction":
