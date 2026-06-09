@@ -43,6 +43,7 @@ import {
   buildPersonalShopEmbed,
 } from "./commands/shop";
 import { handleGameButton, postGameMenuIfNeeded } from "./modules/gameSystem";
+import { claimQuest } from "./modules/questSystem";
 
 export const client = new Client({
   intents: [
@@ -403,6 +404,33 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setTimestamp();
         btn.message.edit({ embeds: [embed] }).catch(() => {});
       }
+    }
+    return;
+  }
+
+  // Bouton quête — claim / progression
+  if (interaction.isButton() && (interaction.customId === "quest_claim" || interaction.customId === "quest_progress")) {
+    const btn = interaction as ButtonInteraction;
+    if (!btn.guild || !btn.member) { await btn.reply({ content: "❌ Erreur.", ephemeral: true }); return; }
+    const member = await btn.guild.members.fetch(btn.user.id).catch(() => null) as GuildMember | null;
+    if (!member) { await btn.reply({ content: "❌ Impossible de récupérer ton profil.", ephemeral: true }); return; }
+
+    if (btn.customId === "quest_claim") {
+      const result = await claimQuest(member).catch(() => ({ success: false, message: "❌ Une erreur est survenue." }));
+      await btn.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(result.success ? 0x00cc66 : 0xff4444)
+            .setDescription(result.message)
+            .setFooter({ text: "MAI•GESTION" })
+            .setTimestamp(),
+        ],
+        ephemeral: true,
+      });
+    } else {
+      const { getMyQuestProgress } = await import("./modules/questSystem");
+      const embed = await getMyQuestProgress(member);
+      await btn.reply({ embeds: [embed], ephemeral: true });
     }
     return;
   }
