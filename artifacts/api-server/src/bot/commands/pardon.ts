@@ -36,19 +36,4 @@ export async function pardonCommand(message: Message, args: string[]) {
   }
 
   await restoreMember(message.client, message.guild.id, targetId);
-
-  await message.reply({
-    embeds: [
-      new EmbedBuilder()
-        .setColor(0x00cc66)
-        .setTitle("✅ Sanction levée")
-        .setDescription(`La sanction de ${target} a été levée manuellement par ${message.member}.`)
-        .addFields(
-          { name: "Motif initial", value: `\`${status.reason}\``, inline: true },
-          { name: "Rôles restaurés", value: `**${status.roles.length}** rôle(s)`, inline: true }
-        )
-        .setFooter({ text: "MAI•GESTION" })
-        .setTimestamp(),
-    ],
-  }).catch(() => {});
 }
