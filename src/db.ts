@@ -196,3 +196,18 @@ export async function setState(key: string, value: string) {
   if (db) await db`INSERT INTO bot_state (key, value) VALUES (${key}, ${value}) ON CONFLICT (key) DO UPDATE SET value=${value}`;
   else memState.set(key, value);
 }
+
+// ── Reset all XP for a guild ───────────────────────────────────────────────────
+export async function resetAllXP(guildId: string) {
+  const db = getDb();
+  if (db) {
+    await db`UPDATE users SET xp=0, level=0 WHERE guild_id=${guildId}`;
+  } else {
+    for (const [k, v] of memUsers.entries()) {
+      if (k.startsWith(guildId + ":")) {
+        v.xp = 0;
+        v.level = 0;
+      }
+    }
+  }
+}

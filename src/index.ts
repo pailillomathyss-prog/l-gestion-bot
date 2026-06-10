@@ -104,6 +104,62 @@ client.on(Events.MessageCreate, async (message: Message) => {
     return;
   }
 
+  // ── !resetxp all (admin only) ────────────────────────────────────────────
+  if (command === "resetxp") {
+    if (!(message.member as GuildMember).permissions.has(PermissionFlagsBits.Administrator)) return;
+    if (args[0]?.toLowerCase() !== "all") {
+      await message.reply("❌ Usage : `!resetxp all` — remet l'XP et les niveaux de **tout le monde** à zéro.").catch(() => {});
+      return;
+    }
+    if (!message.guild) return;
+    const { EmbedBuilder } = await import("discord.js");
+    const { resetAllXP } = await import("./db.js");
+
+    // Confirmation message
+    const confirmMsg = await message.reply({ embeds: [
+      new EmbedBuilder().setColor(0xff9900).setTitle("⚠️ Confirmation")
+        .setDescription("Cette action va **remettre l'XP et les niveaux de tous les membres à zéro**.\n\nLes rôles de niveau seront également retirés.\n\nRéponds `confirmer` dans les 15 secondes pour valider.")
+        .setFooter({ text: "MAI•GESTION" }).setTimestamp()
+    ] }).catch(() => null);
+
+    const filter = (m: Message) => m.author.id === message.author.id && m.content.toLowerCase() === "confirmer";
+    const collected = await message.channel.awaitMessages({ filter, max: 1, time: 15_000, errors: [] });
+
+    if (!collected.size) {
+      await confirmMsg?.edit({ embeds: [new EmbedBuilder().setColor(0x888888).setDescription("❌ Reset annulé (délai dépassé).").setFooter({text:"MAI•GESTION"}).setTimestamp()] }).catch(() => {});
+      return;
+    }
+    collected.first()?.delete().catch(() => {});
+
+    // Perform reset
+    await resetAllXP(message.guild.id);
+
+    // Remove all level roles from all members
+    const LEVEL_ROLE_NAMES = [
+      "🌱 Niveau 1","⚡ Niveau 5","🔥 Niveau 10","💫 Niveau 20","✨ Niveau 30",
+      "🌟 Niveau 50","🏆 Niveau 75","👑 Niveau 100","💎 Niveau 150","🔮 Niveau 200",
+      "☄️ Niveau 300","🌌 Niveau 500","⚜️ Niveau 750","🎯 Niveau 1000"
+    ];
+    let removed = 0;
+    for (const [, member] of message.guild.members.cache) {
+      if (member.user.bot) continue;
+      for (const roleName of LEVEL_ROLE_NAMES) {
+        const role = message.guild.roles.cache.find(r => r.name === roleName);
+        if (role && member.roles.cache.has(role.id)) {
+          await member.roles.remove(role).catch(() => {});
+          removed++;
+        }
+      }
+    }
+
+    await message.reply({ embeds: [
+      new EmbedBuilder().setColor(0x00cc66).setTitle("✅ Reset XP effectué !")
+        .setDescription(`L'XP et les niveaux de **tous les membres** ont été remis à zéro.\n**${removed}** rôle(s) de niveau retirés.`)
+        .setFooter({ text: "MAI•GESTION" }).setTimestamp()
+    ] }).catch(() => {});
+    return;
+  }
+
   // ── !solde / !coins / !balance ───────────────────────────────────────────
   if (command === "solde" || command === "coins" || command === "balance" || command === "pièces" || command === "pieces") {
     if (!message.guild) return;
