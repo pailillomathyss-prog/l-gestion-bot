@@ -25,7 +25,6 @@ import {
   rulesMessageId,
   setRulesMessageId,
   findOrSendEnterMessage,
-  syncChannelPermissions,
 } from "./modules/rulesGate";
 import { initMemberXP, processVoiceXP, trackVoiceJoin, trackVoiceLeave } from "./modules/expSystem";
 import { handleBoostUpdate } from "./modules/boostAnnounce";
@@ -142,10 +141,6 @@ client.once(Events.ClientReady, async (c) => {
     } else {
       logger.warn(`Aucun salon "règlement" trouvé sur ${guild.name}`);
     }
-
-    await syncChannelPermissions(guild).catch((err) =>
-      logger.error({ err }, `Erreur sync permissions sur ${guild.name}`)
-    );
 
     for (const [, member] of guild.members.cache) {
       if (!member.user.bot) await initMemberXP(member).catch(() => {});
