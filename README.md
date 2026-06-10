@@ -1,64 +1,41 @@
 # MAI•GESTION — Bot Discord
 
-Bot Discord complet avec modération, XP, jeux, shop, giveaways, dons et plus.
+Bot Discord complet : modération, XP/niveaux, jeux, shop, giveaways, dons, AFK, boosts.
 
-## 🚀 Déploiement sur Railway
+## 🚀 Déploiement Railway
 
-### Variables d'environnement requises
 | Variable | Description |
 |---|---|
 | `DISCORD_TOKEN` | Token de ton bot Discord |
-| `DATABASE_URL` | (Optionnel) URL PostgreSQL — fonctionne sans |
-
-### Démarrage
-Railway utilisera automatiquement le `Dockerfile` pour build et lancer le bot.
+| `DATABASE_URL` | (Optionnel) PostgreSQL — fonctionne en RAM sans |
 
 ## ✨ Fonctionnalités
 
-### 🛡️ Modération
-- `!ban @membre [raison]` — Bannir
-- `!unban [ID]` — Débannir
-- `!mute @membre [minutes]` — Muter
-- `!demute @membre` — Démuter
-- `!lock [#salon]` — Verrouiller un salon
-- `!unlock [#salon]` — Déverrouiller
-- `!clear [1-100]` — Supprimer des messages
-- `!pardon @membre` — Lever une sanction
+### 🛡️ Modération (admins, prefix `!`)
+`!ban`, `!unban`, `!mute [minutes]`, `!demute`, `!lock`, `!unlock`
 
-### ⭐ XP & Niveaux
-- Gain automatique sur les messages et en vocal
-- 13 jalons de niveau (1, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000)
-- Rôles créés automatiquement par le bot
-- `!rank [@membre]` — Voir son profil (salon 🌐・cmds)
-- `!leaderboard` — Top 10
+### 🎯 Règlement (bouton dans 🎯・règlement)
+Message automatique avec bouton "J'accepte" → rôle ✅ Membre (créé automatiquement)
 
-### 👾 Jeux (salon 👾・jeux — boutons)
-- 🪙 **Coin Flip** — Pile ou face (50/50)
-- 🎰 **Slots** — Machine à sous (jusqu'à ×20)
-- 🃏 **Blackjack** — Bats le croupier
-- 🎲 **Duel 1v1** — Défie un membre
-- 🎁 **Gacha** — Tire un rôle rare (11 rôles, 6 raretés)
+### ⭐ XP & Niveaux (automatique)
+- Messages : 10–20 XP/min, Voice : 15 XP/5min
+- Niveaux 1–1000 avec 14 rôles jalons créés automatiquement
+- `!rank [@membre]` — uniquement dans 🌐・cmds
 
-### 🧸 Shop (salon 🧸・shop — boutons)
-- Achète des rôles exclusifs avec tes pièces
-- Boost d'XP à acheter
+### 👾 Jeux (boutons dans 👾・jeux)
+🪙 Coin Flip | 🎰 Slots (×20 max) | 🃏 Blackjack | 🎲 Duel 1v1 | 🎁 Gacha (11 rôles, 6 raretés)
 
-### 🎉 Giveaways
-- `!giveaway [prix] [durée]` — Ex: `!giveaway Nitro 24h` ou `!giveaway "500 coins" 1h`
-- Support des coins (donnés automatiquement) et Nitro
+### 🧸 Shop (boutons dans le salon shop/boutique)
+Rôles exclusifs (500–20 000 🪙) + boosts XP
 
-### ❤️ Dons (salon ❤️・dons — bouton)
-- Envoie des pièces à n'importe quel membre via un formulaire
+### 🎉 Giveaways (`!giveaway [durée] [prix]`)
+Coins → donnés automatiquement | Nitro → annoncé, à remettre manuellement
 
-### 📅 Daily (salon avec "daily" dans le nom — bouton)
-- Récompense quotidienne avec système de streak (×3 max)
+### ❤️ Dons (bouton dans ❤️・dons)
+Transfert de pièces via modal (ID destinataire + montant)
 
-### 🎯 Règlement (salon 🎯・règlement — bouton)
-- Message interactif avec bouton d'acceptation
-- Attribution automatique du rôle ✅・Membre
+### 🔕 AFK
+Personne ne peut parler ni écouter (configuré automatiquement)
 
-### 💎 Boosts (salon 💎・boost)
-- Annonce automatique des boosts reçus
-
-### 🔕 AFK (salon 🔕・AFK)
-- Personne ne peut parler ni écouter (permissions automatiques)
+### 💎 Boost
+Annonces automatiques dans 💎・boost
