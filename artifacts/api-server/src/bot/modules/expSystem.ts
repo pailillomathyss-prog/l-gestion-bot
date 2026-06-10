@@ -100,21 +100,35 @@ function autoDelete(msg: { delete: () => Promise<unknown> }, ms = 10_000) {
   setTimeout(() => msg.delete().catch(() => {}), ms);
 }
 
-// ── XP par message ─────────────────────────────────────────────────────────
+// ── Multiplicateurs météo (import dynamique pour éviter les dépendances circulaires) ──
+
+async function getWeatherMultipliers(): Promise<{ xp: number; coins: number }> {
+  try {
+    const { getXPMultiplier, getCoinsMultiplier } = await import("./weatherSystem");
+    return { xp: getXPMultiplier(), coins: getCoinsMultiplier() };
+  } catch {
+    return { xp: 1, coins: 1 };
+  }
+}
+
+// ── XP par message ─────────────────────────────────────────────────────────────
 
 export async function handleXP(member: GuildMember) {
   if (await isPunished(member.guild.id, member.id)) return;
   if (member.roles.cache.some((r) => r.name === PUNISHMENT_ROLE)) return;
 
   const guildId = member.guild.id;
-  const userId = member.id;
-  const user = await getXP(guildId, userId);
+  const userId  = member.id;
+  const user    = await getXP(guildId, userId);
 
   const now = Date.now();
   if (now - user.lastMessage < XP_COOLDOWN) return;
 
-  const gain = Math.floor(Math.random() * (XP_MAX - XP_MIN + 1)) + XP_MIN;
-  user.xp += gain;
+  const weather = await getWeatherMultipliers();
+
+  const baseXP  = Math.floor(Math.random() * (XP_MAX - XP_MIN + 1)) + XP_MIN;
+  const gain    = Math.max(1, Math.round(baseXP * weather.xp));
+  user.xp      += gain;
   user.lastMessage = now;
 
   const newLevel = getLevel(user.xp);
@@ -124,14 +138,22 @@ export async function handleXP(member: GuildMember) {
   await upsertXP(guildId, userId, user.xp, user.level, user.lastMessage);
 
   // Pièces + quêtes
-  const coinGain = Math.floor(Math.random() * (COINS_PER_MSG_MAX - COINS_PER_MSG_MIN + 1)) + COINS_PER_MSG_MIN;
+  const baseCoin = Math.floor(Math.random() * (COINS_PER_MSG_MAX - COINS_PER_MSG_MIN + 1)) + COINS_PER_MSG_MIN;
+  const coinGain = Math.max(1, Math.round(baseCoin * weather.coins));
   await addCoins(guildId, userId, coinGain).catch(() => {});
   await onQuestProgress(member, "messages", 1).catch(() => {});
   await onQuestProgress(member, "xp", gain).catch(() => {});
 
+  // Progression défi communautaire
+  try {
+    const { onCommunityProgress } = await import("./communityChallenge");
+    await onCommunityProgress(member, "messages", 1).catch(() => {});
+    await onCommunityProgress(member, "xp", gain).catch(() => {});
+  } catch { /* ignoré */ }
+
   // Stats + badges
   const { incrementStat, getUserStats } = await import("./db");
-  const { checkBadges } = await import("./badgeSystem");
+  const { checkBadges }                 = await import("./badgeSystem");
   await incrementStat(guildId, userId, "messages_total", 1).catch(() => {});
   await incrementStat(guildId, userId, "coins_earned_total", coinGain).catch(() => {});
   const stats = await getUserStats(guildId, userId).catch(() => null);
@@ -146,9 +168,7 @@ export async function handleXP(member: GuildMember) {
           new EmbedBuilder()
             .setColor(0xffd700)
             .setTitle("🎉 Niveau supérieur !")
-            .setDescription(
-              `${member} vient d'atteindre le **niveau ${newLevel}** !`
-            )
+            .setDescription(`${member} vient d'atteindre le **niveau ${newLevel}** !`)
             .addFields({ name: "Nouveau rôle", value: getRoleName(newLevel) })
             .setThumbnail(member.user.displayAvatarURL())
             .setTimestamp(),
@@ -178,8 +198,8 @@ export async function processVoiceXP(guild: Guild) {
     if (!voiceState.channelId) continue;
     if (voiceState.member?.user.bot) continue;
 
-    const userId = voiceState.id;
-    const key = `${guildId}:${userId}`;
+    const userId  = voiceState.id;
+    const key     = `${guildId}:${userId}`;
     const joinedAt = voiceStartMap.get(key);
     if (!joinedAt) {
       voiceStartMap.set(key, now);
@@ -191,19 +211,28 @@ export async function processVoiceXP(guild: Guild) {
     if (await isPunished(guildId, userId)) continue;
     if (member.roles.cache.some((r) => r.name === PUNISHMENT_ROLE)) continue;
 
-    const user = await getXP(guildId, userId);
-    user.xp += VOICE_XP_GAIN;
+    const weather = await getWeatherMultipliers();
+    const user    = await getXP(guildId, userId);
 
-    const newLevel = getLevel(user.xp);
+    const voiceGain = Math.max(1, Math.round(VOICE_XP_GAIN * weather.xp));
+    user.xp += voiceGain;
+
+    const newLevel  = getLevel(user.xp);
     const leveledUp = newLevel > user.level;
     user.level = newLevel;
 
     await upsertXP(guildId, userId, user.xp, user.level, user.lastMessage);
 
-    // Pièces + quêtes vocal (tick = 10 min)
-    await addCoins(guildId, userId, COINS_PER_VOICE_TICK).catch(() => {});
+    const voiceCoinGain = Math.max(1, Math.round(COINS_PER_VOICE_TICK * weather.coins));
+    await addCoins(guildId, userId, voiceCoinGain).catch(() => {});
     await onQuestProgress(member, "voice_minutes", 10).catch(() => {});
-    await onQuestProgress(member, "xp", VOICE_XP_GAIN).catch(() => {});
+    await onQuestProgress(member, "xp", voiceGain).catch(() => {});
+
+    // Progression défi communautaire (vocal)
+    try {
+      const { onCommunityProgress } = await import("./communityChallenge");
+      await onCommunityProgress(member, "xp", voiceGain).catch(() => {});
+    } catch { /* ignoré */ }
 
     if (leveledUp) {
       await updateMemberRoles(member, newLevel);
@@ -214,9 +243,7 @@ export async function processVoiceXP(guild: Guild) {
             new EmbedBuilder()
               .setColor(0xffd700)
               .setTitle("🎉 Niveau supérieur !")
-              .setDescription(
-                `${member} vient d'atteindre le **niveau ${newLevel}** grâce au vocal ! 🎙️`
-              )
+              .setDescription(`${member} vient d'atteindre le **niveau ${newLevel}** grâce au vocal ! 🎙️`)
               .addFields({ name: "Nouveau rôle", value: getRoleName(newLevel) })
               .setThumbnail(member.user.displayAvatarURL())
               .setTimestamp(),
@@ -233,8 +260,8 @@ export async function processVoiceXP(guild: Guild) {
 
 export async function initMemberXP(member: GuildMember) {
   const guildId = member.guild.id;
-  const userId = member.id;
-  const user = await getXP(guildId, userId);
+  const userId  = member.id;
+  const user    = await getXP(guildId, userId);
   if (user.xp === 0 && user.level === 0 && user.lastMessage === 0) {
     await upsertXP(guildId, userId, 0, 0, 0);
   }
