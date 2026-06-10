@@ -11,6 +11,7 @@ import {
   VoiceState,
   ButtonInteraction,
   UserSelectMenuInteraction,
+  ModalSubmitInteraction,
   EmbedBuilder,
   Message,
 } from "discord.js";
@@ -50,6 +51,15 @@ import { postDailyMenuIfNeeded, handleDailyClaim, handleDailyStreak } from "./mo
 import { initWeather, recordMessage } from "./modules/weatherSystem";
 import { initLoto, joinLoto, updateLotoMessage } from "./modules/lotoSystem";
 import { initCommunityChallenge, claimChallengeReward } from "./modules/communityChallenge";
+import {
+  postDonationPanelIfNeeded,
+  handleDonationStart,
+  handleDonationPickUser,
+  handleDonationAmount,
+  handleDonationCustom,
+  handleDonationModal,
+  handleDonationCancel,
+} from "./modules/donationSystem";
 
 export const client = new Client({
   intents: [
@@ -141,6 +151,7 @@ client.once(Events.ClientReady, async (c) => {
     await postShopIfNeeded(guild, c.user.id);
     await postGameMenuIfNeeded(guild, c.user.id);
     await postDailyMenuIfNeeded(guild, c.user.id);
+    await postDonationPanelIfNeeded(guild, c.user.id);
 
     logger.info(`✅ Initialisation complète du serveur "${guild.name}"`);
   }
@@ -305,6 +316,56 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (target.replied || target.deferred) await target.followUp(r).catch(() => {});
     else await target.reply(r).catch(() => {});
   };
+
+  // ── Dons ──────────────────────────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "donation_start") {
+    await handleDonationStart(interaction as ButtonInteraction).catch(async (err) => {
+      logger.error({ err }, "Erreur handleDonationStart");
+      await errReply(interaction as ButtonInteraction);
+    });
+    return;
+  }
+
+  if (interaction.isUserSelectMenu() && interaction.customId === "donation_pick_user") {
+    await handleDonationPickUser(interaction as UserSelectMenuInteraction).catch(async (err) => {
+      logger.error({ err }, "Erreur handleDonationPickUser");
+      await errReply(interaction as UserSelectMenuInteraction);
+    });
+    return;
+  }
+
+  if (interaction.isButton() && interaction.customId.startsWith("donation_amount:")) {
+    const [, recipientId, amountStr] = interaction.customId.split(":");
+    const amount = parseInt(amountStr, 10);
+    await handleDonationAmount(interaction as ButtonInteraction, recipientId, amount).catch(async (err) => {
+      logger.error({ err }, "Erreur handleDonationAmount");
+      await errReply(interaction as ButtonInteraction);
+    });
+    return;
+  }
+
+  if (interaction.isButton() && interaction.customId.startsWith("donation_custom:")) {
+    const recipientId = interaction.customId.split(":")[1];
+    await handleDonationCustom(interaction as ButtonInteraction, recipientId).catch(async (err) => {
+      logger.error({ err }, "Erreur handleDonationCustom");
+      await errReply(interaction as ButtonInteraction);
+    });
+    return;
+  }
+
+  if (interaction.isButton() && interaction.customId === "donation_cancel") {
+    await handleDonationCancel(interaction as ButtonInteraction).catch(() => {});
+    return;
+  }
+
+  if (interaction.isModalSubmit() && interaction.customId.startsWith("donation_modal:")) {
+    const recipientId = interaction.customId.split(":")[1];
+    await handleDonationModal(interaction as ModalSubmitInteraction, recipientId).catch(async (err) => {
+      logger.error({ err }, "Erreur handleDonationModal");
+      if (!interaction.replied) await (interaction as ModalSubmitInteraction).reply({ content: "❌ Une erreur est survenue.", ephemeral: true }).catch(() => {});
+    });
+    return;
+  }
 
   // ── Giveaway ──────────────────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "giveaway_join") {
