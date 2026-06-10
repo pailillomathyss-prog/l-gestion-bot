@@ -1,2 +1,3 @@
-// API Zod - Réinitialisé
+// API Zod - RESET COMPLET
+// Aucune fonctionnalité
 export {};
