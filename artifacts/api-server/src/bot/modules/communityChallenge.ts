@@ -44,6 +44,9 @@ const personalProgress = new Map<string, Map<string, number>>();
 // guildId → Set<userId> claimed
 const claimedCache = new Map<string, Set<string>>();
 
+// guildId → Set<userId> déjà notifiés "objectif atteint" (anti-spam post-redémarrage)
+const notifiedCache = new Map<string, Set<string>>();
+
 // rate-limit for embed updates (guildId → last update ts)
 const lastUpdateTs = new Map<string, number>();
 
@@ -94,22 +97,41 @@ async function saveState(guildId: string, s: ChallengeState): Promise<void> {
       message_id=${s.messageId}, ended=${s.ended}`;
 }
 
-async function addPersonalProgress(guildId: string, userId: string, challengeId: string, amount: number): Promise<number> {
+/**
+ * Incrémente la progression personnelle.
+ * Retourne { newValue, prevValue } basés sur la DB (source de vérité),
+ * ce qui évite tout faux positif après un redémarrage du bot.
+ */
+async function addPersonalProgress(
+  guildId: string, userId: string, challengeId: string, amount: number
+): Promise<{ newValue: number; prevValue: number }> {
   if (!personalProgress.has(guildId)) personalProgress.set(guildId, new Map());
   const gMap = personalProgress.get(guildId)!;
-  const cur = gMap.get(userId) ?? 0;
-  const next = cur + amount;
-  gMap.set(userId, next);
 
   const sql = getSql();
   if (sql) {
-    await sql`INSERT INTO community_challenge_progress (guild_id,user_id,challenge_id,contribution,claimed)
-      VALUES (${guildId},${userId},${challengeId},${amount},false)
-      ON CONFLICT (guild_id,user_id) DO UPDATE SET
-        challenge_id=${challengeId},
-        contribution=community_challenge_progress.contribution+${amount}`.catch(() => {});
+    try {
+      const rows = await sql<{ contribution: number }[]>`
+        INSERT INTO community_challenge_progress (guild_id,user_id,challenge_id,contribution,claimed)
+        VALUES (${guildId},${userId},${challengeId},${amount},false)
+        ON CONFLICT (guild_id,user_id) DO UPDATE SET
+          challenge_id=${challengeId},
+          contribution=community_challenge_progress.contribution+${amount}
+        RETURNING contribution`;
+      const newValue = rows[0]?.contribution ?? amount;
+      const prevValue = newValue - amount;
+      gMap.set(userId, newValue);
+      return { newValue, prevValue };
+    } catch {
+      // Fallback mémoire si erreur DB
+    }
   }
-  return next;
+
+  // Fallback sans DB
+  const cur = gMap.get(userId) ?? 0;
+  const newValue = cur + amount;
+  gMap.set(userId, newValue);
+  return { newValue, prevValue: cur };
 }
 
 async function getPersonalProgress(guildId: string, userId: string, challengeId: string): Promise<number> {
@@ -243,8 +265,8 @@ export async function onCommunityProgress(member: GuildMember, type: "messages" 
   if (Date.now() > endsAt) return;
   if (s.type !== type) return;
 
-  // Ajouter seulement ce qui est gagné DEPUIS le début du défi
-  const newContrib = await addPersonalProgress(guildId, userId, s.challengeId, amount);
+  // Incrémente via DB — prevValue et newValue reflètent la réalité même après un redémarrage
+  const { newValue, prevValue } = await addPersonalProgress(guildId, userId, s.challengeId, amount);
 
   // Mise à jour du message (rate-limited toutes les 60s)
   const last = lastUpdateTs.get(guildId) ?? 0;
@@ -253,16 +275,18 @@ export async function onCommunityProgress(member: GuildMember, type: "messages" 
     updateMessage(member.guild).catch(() => {});
   }
 
-  // Notification quand l'objectif individuel est atteint (exactement au passage du seuil)
-  const prev = newContrib - amount;
-  if (prev < s.target && newContrib >= s.target) {
+  // Notification : uniquement si le seuil vient juste d'être franchi ET pas encore notifié
+  const alreadyNotified = notifiedCache.get(guildId)?.has(userId) ?? false;
+  if (!alreadyNotified && prevValue < s.target && newValue >= s.target) {
+    if (!notifiedCache.has(guildId)) notifiedCache.set(guildId, new Set());
+    notifiedCache.get(guildId)!.add(userId);
+
     const ch = findEventChannel(member.guild);
     if (ch) {
       await ch.send({
         content: `🎉 <@${userId}> a atteint l'objectif du défi communautaire ! Tape \`!claim-defi\` pour réclamer **${s.rewardPerPerson.toLocaleString("fr-FR")} 🪙** !`,
       }).catch(() => {});
     }
-    // Màj immédiate
     updateMessage(member.guild).catch(() => {});
   }
 }
@@ -310,6 +334,7 @@ async function startChallengeForGuild(client: Client, guild: Guild): Promise<voi
   // Réinitialiser la mémoire per-guild
   personalProgress.set(guild.id, new Map());
   claimedCache.set(guild.id, new Set());
+  notifiedCache.set(guild.id, new Set());
 
   const s: ChallengeState = {
     challengeId: `${def.id}_${now}`,
@@ -375,6 +400,19 @@ export async function initCommunityChallenge(client: Client): Promise<void> {
         if (Date.now() < endsAt) {
           const remaining = endsAt - Date.now();
           logger.info(`🌍 Défi actif sur ${guild.name}, fin dans ${Math.round(remaining / 86_400_000)}j`);
+
+          // Pré-charger le notifiedCache depuis la DB pour éviter de re-notifier après redémarrage
+          const sql = getSql();
+          if (sql) {
+            try {
+              const completed = await sql<{ user_id: string }[]>`
+                SELECT user_id FROM community_challenge_progress
+                WHERE guild_id=${guild.id} AND challenge_id=${s.challengeId} AND contribution >= ${s.target}`;
+              if (!notifiedCache.has(guild.id)) notifiedCache.set(guild.id, new Set());
+              for (const row of completed) notifiedCache.get(guild.id)!.add(row.user_id);
+              logger.info(`🌍 ${completed.length} membre(s) déjà completés chargés dans notifiedCache pour ${guild.name}`);
+            } catch { /* ignoré */ }
+          }
 
           // Màj embed au démarrage
           await updateMessage(guild).catch(() => {});
