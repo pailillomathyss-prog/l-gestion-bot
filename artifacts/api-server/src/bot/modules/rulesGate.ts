@@ -66,7 +66,7 @@ function isReadOnlyChannel(name: string) {
   return READ_ONLY_KEYWORDS.some((kw) => n.includes(kw));
 }
 
-/** Salons de la catégorie jugement — le bot ne touche RIEN dans ces salons */
+/** Salons de la catégorie jugement */
 export function isJugementChannel(name: string) {
   const n = normalize(name);
   return n.includes("jugement") || n.includes("jugment") || n.includes("prison") || n.includes("sanction");
@@ -103,6 +103,56 @@ async function ensureNouveauxRole(guild: Guild): Promise<Role | null> {
   return ensureRole(guild, NOUVEAUX_ROLE);
 }
 
+/**
+ * Synchronise les permissions de la catégorie ⚖️ JUGEMENT et ses salons :
+ * - @everyone       → ne voit pas
+ * - ⏳・nouveaux    → ne voit pas
+ * - 🪫 CONTRE LES RÈGLES → voit (seulement ce rôle)
+ */
+export async function syncJugementPermissions(guild: Guild): Promise<void> {
+  await guild.roles.fetch();
+  await guild.channels.fetch();
+
+  const everyone    = guild.roles.everyone;
+  const nouveauxRole = guild.roles.cache.find((r) => r.name === NOUVEAUX_ROLE) ?? null;
+  const punishRole   = guild.roles.cache.find((r) => r.name === PUNISHMENT_ROLE) ?? null;
+
+  if (!punishRole) {
+    logger.warn(`Rôle "${PUNISHMENT_ROLE}" introuvable sur ${guild.name} — sync jugement ignorée`);
+    return;
+  }
+
+  let synced = 0;
+  for (const [, channel] of guild.channels.cache) {
+    const allowed = [
+      ChannelType.GuildText, ChannelType.GuildVoice,
+      ChannelType.GuildCategory, ChannelType.GuildAnnouncement,
+      ChannelType.GuildForum, ChannelType.GuildStageVoice,
+    ] as number[];
+    if (!allowed.includes(channel.type)) continue;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const parentName: string = (channel as any).parent?.name ?? "";
+    if (!isJugementChannel(channel.name) && !isJugementChannel(parentName)) continue;
+
+    try {
+      // @everyone : ne voit pas
+      await channel.permissionOverwrites.edit(everyone, { ViewChannel: false });
+      // ⏳・nouveaux : ne voit pas
+      if (nouveauxRole) {
+        await channel.permissionOverwrites.edit(nouveauxRole, { ViewChannel: false });
+      }
+      // 🪫 CONTRE LES RÈGLES : voit
+      await channel.permissionOverwrites.edit(punishRole, { ViewChannel: true });
+      synced++;
+    } catch (err) {
+      logger.warn({ err }, `Impossible de sync perms jugement sur #${channel.name}`);
+    }
+  }
+
+  logger.info(`⚖️ Permissions JUGEMENT sync sur "${guild.name}" — ${synced} salons`);
+}
+
 export async function syncChannelPermissions(guild: Guild): Promise<void> {
   const nouveauxRole = await ensureNouveauxRole(guild);
   if (!nouveauxRole) return;
@@ -133,7 +183,7 @@ export async function syncChannelPermissions(guild: Guild): Promise<void> {
       continue;
     }
 
-    // Les salons JUGEMENT (et leur catégorie) sont configurés manuellement — on ne touche pas
+    // Les salons JUGEMENT sont gérés par syncJugementPermissions — on ne touche pas
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const parentName: string = (channel as any).parent?.name ?? "";
     if (isJugementChannel(channel.name) || isJugementChannel(parentName)) {
