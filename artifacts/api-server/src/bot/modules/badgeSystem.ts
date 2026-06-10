@@ -28,6 +28,26 @@ export const BADGES: Badge[] = [
   { id: "fidele",       name: "💫・fidèle",        description: "30 jours de streak daily",   emoji: "💫", stat: "streak",             threshold: 30    },
 ];
 
+/**
+ * Catégories de badges ordonnées du plus faible au plus fort.
+ * Quand un badge supérieur est attribué, les inférieurs de la même catégorie sont retirés.
+ */
+const BADGE_CATEGORIES: string[][] = [
+  ["bavard", "communicatif", "orateur", "legende_msg"],
+  ["combattant", "guerrier", "champion", "invincible"],
+  ["riche", "investisseur", "millionnaire"],
+  ["assidu", "regulier", "fidele"],
+];
+
+/** Retourne les IDs des badges inférieurs dans la même catégorie que badgeId */
+function getLowerBadgesInCategory(badgeId: string): string[] {
+  for (const category of BADGE_CATEGORIES) {
+    const idx = category.indexOf(badgeId);
+    if (idx > 0) return category.slice(0, idx);
+  }
+  return [];
+}
+
 async function ensureBadgeRole(guild: import("discord.js").Guild, badge: Badge) {
   await guild.roles.fetch();
   let role = guild.roles.cache.find((r) => r.name === badge.name);
@@ -75,6 +95,18 @@ export async function checkBadges(member: GuildMember, stats: UserStats, streak 
 
     await member.roles.add(role).catch(() => {});
     await addUserBadge(guildId, userId, badge.id);
+
+    // ── Retirer les rôles inférieurs de la même catégorie ──────────────────
+    const lowerIds = getLowerBadgesInCategory(badge.id);
+    for (const lowerId of lowerIds) {
+      const lowerBadge = BADGES.find((b) => b.id === lowerId);
+      if (!lowerBadge) continue;
+      const lowerRole = member.guild.roles.cache.find((r) => r.name === lowerBadge.name);
+      if (lowerRole && member.roles.cache.has(lowerRole.id)) {
+        await member.roles.remove(lowerRole).catch(() => {});
+        logger.info(`🔄 Rôle badge inférieur "${lowerBadge.name}" retiré à ${member.user.tag} (remplacé par "${badge.name}")`);
+      }
+    }
 
     const ch = findAnnounceCh(member.guild);
     if (ch) {
