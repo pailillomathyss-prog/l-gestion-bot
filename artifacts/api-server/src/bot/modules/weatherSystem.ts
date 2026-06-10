@@ -55,10 +55,22 @@ function computeWeather(count: number): WeatherType {
 }
 
 function findBoostChannel(guild: Guild): TextChannel | null {
+  // Priorité absolue à l'emoji 🌤️ pour éviter de tomber sur un autre salon "boost"
+  const byEmoji = guild.channels.cache.find(
+    (c) => c.type === ChannelType.GuildText && c.name.includes("🌤️")
+  ) as TextChannel | undefined;
+  if (byEmoji) return byEmoji;
+
+  // Fallback : cherche un salon contenant "boost" ET "🌤" ou exactement "boost"
   return (guild.channels.cache.find(
     (c) =>
       c.type === ChannelType.GuildText &&
-      (c.name.toLowerCase().includes("boost") || c.name.includes("🌤️"))
+      c.name.toLowerCase() === "boost"
+  ) as TextChannel) ??
+  (guild.channels.cache.find(
+    (c) =>
+      c.type === ChannelType.GuildText &&
+      c.name.toLowerCase().includes("boost")
   ) as TextChannel) ?? null;
 }
 
