@@ -65,13 +65,29 @@ export async function handleModCommand(msg: Message, cmd: string, args: string[]
     }
     case "lock": {
       const ch = (msg.mentions.channels.first() as TextChannel | undefined) ?? (msg.channel as TextChannel);
-      await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
-      await msg.reply({ embeds: [E(0xff4444, `🔒 <#${ch.id}> verrouillé.`)] });
+      // Bloquer @everyone
+      await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false, SendMessagesInThreads: false }).catch(() => {});
+      // Bloquer aussi chaque rôle qui a un overwrite explicite (ex: ✅ Membre)
+      for (const [, ow] of ch.permissionOverwrites.cache) {
+        if (ow.type === 0 && ow.id !== guild.roles.everyone.id) {
+          const role = guild.roles.cache.get(ow.id);
+          if (role) await ch.permissionOverwrites.edit(role, { SendMessages: false, SendMessagesInThreads: false }).catch(() => {});
+        }
+      }
+      await msg.reply({ embeds: [E(0xff4444, `🔒 <#${ch.id}> verrouillé — aucun rôle ne peut écrire.`)] });
       break;
     }
     case "unlock": {
       const ch = (msg.mentions.channels.first() as TextChannel | undefined) ?? (msg.channel as TextChannel);
-      await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null });
+      // Restaurer @everyone
+      await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null, SendMessagesInThreads: null }).catch(() => {});
+      // Restaurer tous les overwrites de rôles
+      for (const [, ow] of ch.permissionOverwrites.cache) {
+        if (ow.type === 0 && ow.id !== guild.roles.everyone.id) {
+          const role = guild.roles.cache.get(ow.id);
+          if (role) await ch.permissionOverwrites.edit(role, { SendMessages: null, SendMessagesInThreads: null }).catch(() => {});
+        }
+      }
       await msg.reply({ embeds: [E(0x00cc66, `🔓 <#${ch.id}> déverrouillé.`)] });
       break;
     }
