@@ -430,6 +430,29 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
       break;
     }
 
+
+    // ── addcoins ──────────────────────────────────────────────────────────────
+    case "addcoins": {
+      if (!guildMember.permissions.has(PermissionFlagsBits.Administrator)) { await interaction.reply({ content: "❌ Permission insuffisante.", ephemeral: true }); return; }
+      const target = interaction.options.getUser("membre", true);
+      const montant = interaction.options.getInteger("montant", true);
+      const targetMember = await guild.members.fetch(target.id).catch(() => null);
+      if (!targetMember) { await interaction.reply({ content: "❌ Membre introuvable.", ephemeral: true }); return; }
+      const newBal = await addCoins(guild.id, target.id, montant);
+      const signe = montant >= 0 ? `+${montant}` : `${montant}`;
+      const couleur = montant >= 0 ? 0x00cc66 : 0xff4444;
+      const action = montant >= 0 ? "💰 Pièces ajoutées !" : "💸 Pièces retirées !";
+      await interaction.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(couleur)
+          .setTitle(action)
+          .setDescription(`**${signe} 🪙** → <@${target.id}>\n\n💰 Nouveau solde : **${newBal.toLocaleString("fr-FR")} 🪙**`)
+          .setThumbnail(target.displayAvatarURL())
+          .setFooter({ text: `Action par ${interaction.user.tag} • MAI•GESTION` }).setTimestamp()],
+        ephemeral: false,
+      });
+      break;
+    }
     default:
       await interaction.reply({ content: "❌ Commande inconnue.", ephemeral: true });
   }
