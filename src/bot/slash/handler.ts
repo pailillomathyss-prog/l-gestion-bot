@@ -11,6 +11,7 @@ import { buildGenericShopEmbed, buildGenericShopComponents, buildPersonalShopEmb
 import { getUserData } from "../modules/expSystem";
 import { getMyQuestProgress, claimQuest, launchCustomQuest } from "../modules/questSystem";
 import { logger } from "../../lib/logger";
+import { jackpotCommand, postJackpotPanelIfNeeded } from "../../features/jackpot.js";
 
 export async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   const { commandName, guild, member } = interaction;
@@ -451,6 +452,18 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
           .setFooter({ text: `Action par ${interaction.user.tag} • MAI•GESTION` }).setTimestamp()],
         ephemeral: false,
       });
+      break;
+    }
+
+    // ── jackpot ────────────────────────────────────────────────────────────────
+    case "jackpot": {
+      const force = interaction.options.getBoolean("forcer") ?? false;
+      if (force && !guildMember.permissions.has(PermissionFlagsBits.Administrator)) {
+        await interaction.reply({ content: "❌ Seuls les admins peuvent forcer le tirage.", ephemeral: true }); return;
+      }
+      await interaction.deferReply({ ephemeral: !force });
+      const embed = await jackpotCommand(guild, force);
+      await interaction.editReply({ embeds: [embed] });
       break;
     }
     default:
