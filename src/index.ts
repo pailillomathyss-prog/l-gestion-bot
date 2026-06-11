@@ -70,6 +70,8 @@ client.on(Events.GuildCreate, async (guild) => {
   await postShopIfNeeded(guild, client.user!.id).catch(() => {});
   await postDonPanelIfNeeded(guild, client.user!.id).catch(() => {});
   await postLevelsPanelIfNeeded(guild, client.user!.id).catch(() => {});
+  await postDailyPanelIfNeeded(guild, client.user!.id).catch(() => {});
+  await postJackpotPanelIfNeeded(guild, client.user!.id).catch(() => {});
 });
 
 client.on(Events.GuildMemberUpdate, async (o, n) => {
@@ -248,6 +250,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (btn.customId === DON_BTN)                return safeReply(btn, () => handleDonButton(btn));
     if (btn.customId.startsWith("shop_"))        return safeReply(btn, () => handleShopButton(btn));
     if (btn.customId.startsWith("g_"))           return safeReply(btn, () => handleGameButton(btn));
+    if (btn.customId === "daily_claim")          return safeReply(btn, () => handleDailyClaim(btn));
+    if (btn.customId === "daily_streak")         return safeReply(btn, () => handleDailyStreak(btn));
+    if (btn.customId === "jackpot_view")         return safeReply(btn, () => handleJackpotButton(btn));
   }
   if (interaction.isUserSelectMenu() && interaction.customId.startsWith("g_duel_pick:"))
     return safeReply(interaction as UserSelectMenuInteraction, () => handleDuelSelect(interaction as UserSelectMenuInteraction));
