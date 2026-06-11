@@ -5,6 +5,7 @@ import {
   UserSelectMenuBuilder, UserSelectMenuInteraction,
 } from "discord.js";
 import { getUser, saveUser } from "../db.js";
+import { addToJackpot } from "./jackpot.js";
 
 // ── Gacha ─────────────────────────────────────────────────────────────────────
 const GACHA_ROLES = [
@@ -137,6 +138,7 @@ async function doFlip(btn:ButtonInteraction, bet:number) {
   const embed = buildFlipEmbed(win, bet, newCoins);
   await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  if (!win) await addToJackpot(btn.guild.id, Math.floor(bet * 0.05)).catch(()=>{});
   const ch = await tryOpenChannel(btn.guild, `flip-${btn.user.username}`, btn.user.id);
   if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("flip", bet)]}).catch(()=>{});
 }
@@ -159,6 +161,7 @@ async function replayFlip(btn:ButtonInteraction, bet:number) {
   const newCoins = data.coins + delta;
   await btn.editReply({embeds:[buildFlipEmbed(win, bet, newCoins)], components:[buildReplayRow("flip", bet)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  if (!win) await addToJackpot(btn.guild.id, Math.floor(bet * 0.05)).catch(()=>{});
 }
 
 // ── 🎰 Slots ──────────────────────────────────────────────────────────────────
@@ -174,6 +177,7 @@ async function doSlots(btn:ButtonInteraction, bet:number) {
   const embed = buildSlotsEmbed(r, txt, delta, newCoins);
   await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  if (delta < 0) await addToJackpot(btn.guild.id, Math.floor(bet * 0.05)).catch(()=>{});
   const ch = await tryOpenChannel(btn.guild, `slots-${btn.user.username}`, btn.user.id);
   if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("slot", bet)]}).catch(()=>{});
 }
@@ -202,6 +206,7 @@ async function replaySlots(btn:ButtonInteraction, bet:number) {
   const newCoins = data.coins + delta;
   await btn.editReply({embeds:[buildSlotsEmbed(r, txt, delta, newCoins)], components:[buildReplayRow("slot", bet)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  if (delta < 0) await addToJackpot(btn.guild.id, Math.floor(bet * 0.05)).catch(()=>{});
 }
 
 // ── 🃏 Blackjack ──────────────────────────────────────────────────────────────
@@ -216,6 +221,7 @@ async function doBJ(btn:ButtonInteraction, bet:number) {
   const newCoins = data.coins + delta;
   await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  if (delta < 0) await addToJackpot(btn.guild.id, Math.floor(bet * 0.05)).catch(()=>{});
   const ch = await tryOpenChannel(btn.guild, `blackjack-${btn.user.username}`, btn.user.id);
   if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("bj", bet)]}).catch(()=>{});
 }
@@ -249,6 +255,7 @@ async function replayBJ(btn:ButtonInteraction, bet:number) {
   const newCoins = data.coins + delta;
   await btn.editReply({embeds:[embed], components:[buildReplayRow("bj", bet)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  if (delta < 0) await addToJackpot(btn.guild.id, Math.floor(bet * 0.05)).catch(()=>{});
 }
 
 // ── 🎁 Gacha ──────────────────────────────────────────────────────────────────
@@ -260,6 +267,7 @@ async function doGacha(btn:ButtonInteraction) {
   await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
   if (role&&member&&!already) await member.roles.add(role).catch(()=>{});
+  await addToJackpot(btn.guild.id, Math.floor(GACHA_PRICE * 0.05)).catch(()=>{});
   const ch = await tryOpenChannel(btn.guild, `gacha-${btn.user.username}`, btn.user.id);
   if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("gacha", 0)]}).catch(()=>{});
 }
@@ -290,6 +298,7 @@ async function replayGacha(btn:ButtonInteraction) {
   await btn.editReply({embeds:[embed], components:[buildReplayRow("gacha", 0)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
   if (role&&member&&!already) await member.roles.add(role).catch(()=>{});
+  await addToJackpot(btn.guild.id, Math.floor(GACHA_PRICE * 0.05)).catch(()=>{});
 }
 
 // ── 🎲 Duel ───────────────────────────────────────────────────────────────────
@@ -390,6 +399,7 @@ export async function handleGameButton(btn:ButtonInteraction) {
       saveUser(btn.guild.id,wId,{...wData,coins:wData.coins+bet}),
       saveUser(btn.guild.id,lId,{...lData,coins:Math.max(0,lData.coins-bet)}),
     ]).catch(()=>{});
+    await addToJackpot(btn.guild.id, Math.floor(bet * 0.05)).catch(()=>{});
     const embed = new EmbedBuilder().setColor(0xffd700).setTitle("🎲 Duel terminé !")
       .setDescription(`🏆 <@${wId}> remporte **${bet*2}🪙** !\n😔 <@${lId}> perd **${bet}🪙**`)
       .setFooter({text:"MAI•GESTION"}).setTimestamp();
