@@ -109,8 +109,13 @@ client.on(Events.MessageCreate, async (message: Message) => {
     const cmdsCh = message.guild.channels.cache.find(c =>
       c.name.includes("cmds") || c.name.includes("🌐") || c.name.includes("commandes")
     );
-    if (cmdsCh && message.channel.id !== cmdsCh.id) {
-      await message.reply({ content:`❌ Utilise cette commande dans <#${cmdsCh.id}> !`, allowedMentions:{ repliedUser:false } }).catch(() => {});
+    // Toujours restreindre — si le salon n'existe pas, bloquer aussi
+    if (!cmdsCh) {
+      await message.reply({ content:"❌ Salon 🌐・cmds introuvable.", allowedMentions:{ repliedUser:false } }).catch(() => {});
+      return;
+    }
+    if (message.channel.id !== cmdsCh.id) {
+      await message.reply({ content:`❌ Utilise \`!top\` uniquement dans <#${cmdsCh.id}> !`, allowedMentions:{ repliedUser:false } }).catch(() => {});
       return;
     }
     const topUsers = await getTopUsers(message.guild.id, 10).catch(() => [] as Awaited<ReturnType<typeof getTopUsers>>);
