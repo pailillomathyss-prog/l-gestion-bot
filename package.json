@@ -1,7 +1,6 @@
 {
   "name": "mai-gestion-bot",
   "version": "1.0.0",
-  "description": "Bot Discord MAI•GESTION",
   "type": "module",
   "private": true,
   "scripts": {
