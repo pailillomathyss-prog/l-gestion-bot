@@ -1,82 +1,115 @@
-import { REST, Routes, SlashCommandBuilder } from "discord.js";
+import { REST, Routes, SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
 import { logger } from "../../lib/logger";
 
-const ADMIN = "8";
+export const slashCommands = [
+  new SlashCommandBuilder()
+    .setName("rank")
+    .setDescription("Voir ton profil XP et niveau")
+    .addUserOption(o => o.setName("membre").setDescription("Membre à inspecter").setRequired(false)),
 
-const commands = [
-  // ── Publiques ──────────────────────────────────────────────────────────────
-  new SlashCommandBuilder().setName("help").setDescription("Affiche toutes les commandes disponibles").toJSON(),
-  new SlashCommandBuilder().setName("rank").setDescription("Affiche ton profil XP ou celui d'un membre")
-    .addUserOption(o => o.setName("membre").setDescription("Membre à consulter").setRequired(false)).toJSON(),
-  new SlashCommandBuilder().setName("leaderboard").setDescription("Classement des 10 meilleurs membres").toJSON(),
-  new SlashCommandBuilder().setName("jackpot").setDescription("Voir la cagnotte jackpot communautaire")
-    .addBooleanOption(o => o.setName("forcer").setDescription("(Admin) Forcer le tirage immédiatement").setRequired(false)).toJSON(),
+  new SlashCommandBuilder()
+    .setName("leaderboard")
+    .setDescription("Voir le top 10 des joueurs les plus actifs"),
 
-  new SlashCommandBuilder().setName("balance").setDescription("Affiche ton solde de pièces").toJSON(),
-  new SlashCommandBuilder().setName("shop").setDescription("Affiche la boutique avec ton solde et tes rôles").toJSON(),
-  new SlashCommandBuilder().setName("buy").setDescription("Acheter un rôle dans la boutique")
-    .addStringOption(o => o.setName("role").setDescription("Nom du rôle à acheter").setRequired(true)).toJSON(),
-  new SlashCommandBuilder().setName("coinflip").setDescription("Pile ou face — double ou rien !")
-    .addIntegerOption(o => o.setName("mise").setDescription("Montant à miser").setRequired(true).setMinValue(1)).toJSON(),
-  new SlashCommandBuilder().setName("slot").setDescription("Machine à sous — tente ta chance !")
-    .addIntegerOption(o => o.setName("mise").setDescription("Montant à miser").setRequired(true).setMinValue(1)).toJSON(),
-  new SlashCommandBuilder().setName("daily").setDescription("Réclame ta récompense quotidienne (coins ou XP)").toJSON(),
-  new SlashCommandBuilder().setName("quest").setDescription("Affiche ta progression sur la quête active").toJSON(),
-  new SlashCommandBuilder().setName("claim").setDescription("Réclame la récompense de la quête active").toJSON(),
-  new SlashCommandBuilder().setName("warn").setDescription("Affiche le statut de sanction d'un membre")
-    .addUserOption(o => o.setName("membre").setDescription("Membre à consulter").setRequired(false)).toJSON(),
+  new SlashCommandBuilder()
+    .setName("balance")
+    .setDescription("Voir ton solde de pièces")
+    .addUserOption(o => o.setName("membre").setDescription("Membre à inspecter").setRequired(false)),
 
-  // ── Admin ──────────────────────────────────────────────────────────────────
-  new SlashCommandBuilder().setName("addcoins").setDescription("(Admin) Donner ou retirer des pièces à un membre")
-    .setDefaultMemberPermissions(ADMIN)
-    .addUserOption(o => o.setName("membre").setDescription("Membre à créditer / débiter").setRequired(true))
-    .addIntegerOption(o => o.setName("montant").setDescription("Pièces à donner (négatif pour retirer)").setRequired(true)).toJSON(),
-  new SlashCommandBuilder().setName("ban").setDescription("(Admin) Bannir un membre")
-    .setDefaultMemberPermissions(ADMIN)
+  new SlashCommandBuilder()
+    .setName("jackpot")
+    .setDescription("Voir la cagnotte du jackpot communautaire"),
+
+  new SlashCommandBuilder()
+    .setName("don")
+    .setDescription("Donner des pièces à un membre")
+    .addUserOption(o => o.setName("membre").setDescription("Destinataire du don").setRequired(true))
+    .addIntegerOption(o => o.setName("montant").setDescription("Montant de pièces à donner").setRequired(true).setMinValue(1)),
+
+  new SlashCommandBuilder()
+    .setName("giveaway")
+    .setDescription("Lancer un giveaway (admin)")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addStringOption(o => o.setName("durée").setDescription("Durée (ex: 1h, 30m, 2d)").setRequired(true))
+    .addStringOption(o => o.setName("prix").setDescription("Prix du giveaway").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Bannir un membre")
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
     .addUserOption(o => o.setName("membre").setDescription("Membre à bannir").setRequired(true))
-    .addStringOption(o => o.setName("raison").setDescription("Raison du ban").setRequired(false)).toJSON(),
-  new SlashCommandBuilder().setName("unban").setDescription("(Admin) Débannir un membre")
-    .setDefaultMemberPermissions(ADMIN)
-    .addStringOption(o => o.setName("id").setDescription("ID du membre à débannir").setRequired(true)).toJSON(),
-  new SlashCommandBuilder().setName("mute").setDescription("(Admin) Rendre un membre muet")
-    .setDefaultMemberPermissions(ADMIN)
-    .addUserOption(o => o.setName("membre").setDescription("Membre à muter").setRequired(true)).toJSON(),
-  new SlashCommandBuilder().setName("demute").setDescription("(Admin) Retirer le mute d'un membre")
-    .setDefaultMemberPermissions(ADMIN)
-    .addUserOption(o => o.setName("membre").setDescription("Membre à démuter").setRequired(true)).toJSON(),
-  new SlashCommandBuilder().setName("clear").setDescription("(Admin) Supprimer des messages en masse")
-    .setDefaultMemberPermissions(ADMIN)
-    .addIntegerOption(o => o.setName("nombre").setDescription("Nombre de messages à supprimer (1-100)").setRequired(true).setMinValue(1).setMaxValue(100)).toJSON(),
-  new SlashCommandBuilder().setName("lock").setDescription("(Admin) Verrouiller le salon actuel").setDefaultMemberPermissions(ADMIN).toJSON(),
-  new SlashCommandBuilder().setName("unlock").setDescription("(Admin) Déverrouiller le salon actuel").setDefaultMemberPermissions(ADMIN).toJSON(),
-  new SlashCommandBuilder().setName("pardon").setDescription("(Admin) Lever manuellement une sanction")
-    .setDefaultMemberPermissions(ADMIN)
-    .addUserOption(o => o.setName("membre").setDescription("Membre à gracier").setRequired(true)).toJSON(),
-  new SlashCommandBuilder().setName("giveaway").setDescription("(Admin) Lancer un giveaway")
-    .setDefaultMemberPermissions(ADMIN)
-    .addStringOption(o => o.setName("prix").setDescription("Prix du giveaway").setRequired(true))
-    .addStringOption(o => o.setName("durée").setDescription("Durée (ex: 1h, 30m, 2d)").setRequired(true)).toJSON(),
-  new SlashCommandBuilder().setName("event").setDescription("(Admin) Lancer une quête communautaire avec paramètres custom")
-    .setDefaultMemberPermissions(ADMIN)
-    .addStringOption(o => o.setName("type").setDescription("Type de défi").setRequired(true)
-      .addChoices(
-        { name: "Messages", value: "messages" },
-        { name: "XP", value: "xp" },
-        { name: "Vocal (minutes)", value: "vocal" },
-      ))
-    .addIntegerOption(o => o.setName("cible").setDescription("Nombre à atteindre").setRequired(true).setMinValue(1))
-    .addIntegerOption(o => o.setName("récompense").setDescription("Coins à gagner").setRequired(true).setMinValue(1))
-    .addIntegerOption(o => o.setName("durée").setDescription("Durée en jours (défaut: 7)").setRequired(false).setMinValue(1).setMaxValue(30)).toJSON(),
-  new SlashCommandBuilder().setName("syncperms").setDescription("(Admin) Synchroniser les permissions des salons").setDefaultMemberPermissions(ADMIN).toJSON(),
-  new SlashCommandBuilder().setName("postshop").setDescription("(Admin) Poste le panneau boutique avec boutons").setDefaultMemberPermissions(ADMIN).toJSON(),
+    .addStringOption(o => o.setName("raison").setDescription("Raison du bannissement").setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName("unban")
+    .setDescription("Débannir un utilisateur")
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+    .addStringOption(o => o.setName("id").setDescription("ID de l'utilisateur à débannir").setRequired(true))
+    .addStringOption(o => o.setName("raison").setDescription("Raison").setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName("mute")
+    .setDescription("Muter un membre")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(o => o.setName("membre").setDescription("Membre à muter").setRequired(true))
+    .addStringOption(o => o.setName("durée").setDescription("Durée (ex: 10m, 2h, 1d)").setRequired(true))
+    .addStringOption(o => o.setName("raison").setDescription("Raison").setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName("demute")
+    .setDescription("Démuter un membre")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(o => o.setName("membre").setDescription("Membre à démuter").setRequired(true))
+    .addStringOption(o => o.setName("raison").setDescription("Raison").setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName("lock")
+    .setDescription("Verrouiller un salon")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addChannelOption(o => o.setName("salon").setDescription("Salon à verrouiller").setRequired(false))
+    .addStringOption(o => o.setName("raison").setDescription("Raison").setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName("unlock")
+    .setDescription("Déverrouiller un salon")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addChannelOption(o => o.setName("salon").setDescription("Salon à déverrouiller").setRequired(false))
+    .addStringOption(o => o.setName("raison").setDescription("Raison").setRequired(false)),
+
+  new SlashCommandBuilder()
+    .setName("clear")
+    .setDescription("Supprimer des messages")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .addIntegerOption(o => o.setName("nombre").setDescription("Nombre de messages (1-100)").setRequired(true).setMinValue(1).setMaxValue(100)),
+
+  new SlashCommandBuilder()
+    .setName("restorexp")
+    .setDescription("Ajouter de l'XP à un membre (admin)")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addUserOption(o => o.setName("membre").setDescription("Membre").setRequired(true))
+    .addIntegerOption(o => o.setName("xp").setDescription("Montant XP à ajouter").setRequired(true).setMinValue(1)),
+
+  new SlashCommandBuilder()
+    .setName("addcoins")
+    .setDescription("Ajouter ou retirer des pièces à un membre (admin)")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addIntegerOption(o => o.setName("montant").setDescription("Montant (positif = ajouter, négatif = retirer)").setRequired(true))
+    .addUserOption(o => o.setName("membre").setDescription("Membre cible (toi par défaut)").setRequired(false)),
 ];
 
-export async function registerSlashCommands(token: string, clientId: string) {
-  const rest = new REST().setToken(token);
+export async function registerSlashCommands(token: string, clientId: string, guildId?: string) {
+  const rest = new REST({ version: "10" }).setToken(token);
+  const body = slashCommands.map(c => c.toJSON());
+
   try {
-    await rest.put(Routes.applicationCommands(clientId), { body: commands });
-    logger.info(`✅ ${commands.length} slash commands enregistrées`);
+    if (guildId) {
+      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body });
+      logger.info(`✅ ${body.length} commandes / enregistrées (guild ${guildId})`);
+    } else {
+      await rest.put(Routes.applicationCommands(clientId), { body });
+      logger.info(`✅ ${body.length} commandes / enregistrées (global)`);
+    }
   } catch (err) {
-    logger.error({ err }, "Impossible d'enregistrer les slash commands");
+    logger.error({ err }, "Erreur enregistrement commandes /");
   }
 }

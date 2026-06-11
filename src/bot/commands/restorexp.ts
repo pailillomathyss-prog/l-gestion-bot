@@ -1,16 +1,31 @@
-import { Message, PermissionFlagsBits } from "discord.js";
-import { upsertXP } from "../modules/db.js";
+import { Message, EmbedBuilder, PermissionFlagsBits } from "discord.js";
+import { upsertXP, getXP } from "../modules/db";
+import { xpToLevel } from "../modules/expSystem";
 
-export async function restoreXpCommand(message: Message) {
-  if (!message.guild || !message.member) return;
-  if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-    await message.reply("❌ Admin seulement.").catch(() => {});
-    return;
-  }
-  const members = await message.guild.members.fetch();
-  const { initMemberXP } = await import("../modules/expSystem.js");
-  for (const [, m] of members) {
-    if (!m.user.bot) await initMemberXP(m).catch(() => {});
-  }
-  await message.reply(`✅ XP initialisée pour **${members.size}** membres.`).catch(() => {});
+export async function restoreXpCommand(message: Message, args: string[]) {
+  if (!message.member?.permissions.has(PermissionFlagsBits.Administrator))
+    return message.reply("❌ Commande réservée aux administrateurs.");
+  if (!message.guild) return;
+
+  const target = message.mentions.members?.first();
+  const amount = parseInt(args[1] ?? "");
+
+  if (!target) return message.reply("❌ Mentionne un membre. Ex: `!restorexp @user 5000`");
+  if (isNaN(amount) || amount <= 0) return message.reply("❌ Fournis un montant valide.");
+
+  const data    = await getXP(message.guild.id, target.id);
+  const newXP   = data.xp + amount;
+  const newLvl  = xpToLevel(newXP);
+
+  await upsertXP(message.guild.id, target.id, newXP, newLvl, data.lastMessage);
+
+  await message.reply({ embeds: [new EmbedBuilder()
+    .setColor(0x57f287).setTitle("✅ XP restauré")
+    .addFields(
+      { name: "Utilisateur", value: `${target.displayName}`, inline: true },
+      { name: "XP ajouté",   value: `+${amount.toLocaleString("fr-FR")} XP`, inline: true },
+      { name: "XP total",    value: `${newXP.toLocaleString("fr-FR")} XP`, inline: true },
+      { name: "Niveau",      value: `${newLvl}`, inline: true },
+    )
+    .setFooter({ text: "MAI•GESTION" }).setTimestamp()] });
 }

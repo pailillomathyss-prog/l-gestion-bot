@@ -1,19 +1,20 @@
-type LogData = Record<string, unknown> | unknown;
+import pino from "pino";
 
-function fmt(data: LogData, msg?: string): string {
-  const time = new Date().toISOString();
-  if (msg) {
-    const extra = data && typeof data === "object" && "err" in (data as Record<string, unknown>)
-      ? ` — ${(data as Record<string, unknown>).err}`
-      : "";
-    return `[${time}] ${msg}${extra}`;
-  }
-  return `[${time}] ${typeof data === "string" ? data : JSON.stringify(data)}`;
-}
+const isProduction = process.env.NODE_ENV === "production";
 
-export const logger = {
-  info:  (data: LogData, msg?: string) => console.log("ℹ️ ", fmt(data, msg)),
-  warn:  (data: LogData, msg?: string) => console.warn("⚠️ ", fmt(data, msg)),
-  error: (data: LogData, msg?: string) => console.error("❌ ", fmt(data, msg)),
-  debug: (data: LogData, msg?: string) => console.debug("🔍 ", fmt(data, msg)),
-};
+export const logger = pino({
+  level: process.env.LOG_LEVEL ?? "info",
+  redact: [
+    "req.headers.authorization",
+    "req.headers.cookie",
+    "res.headers['set-cookie']",
+  ],
+  ...(isProduction
+    ? {}
+    : {
+        transport: {
+          target: "pino-pretty",
+          options: { colorize: true },
+        },
+      }),
+});

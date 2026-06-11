@@ -1,31 +1,34 @@
-import { Message, PermissionFlagsBits, ChannelType, TextChannel } from "discord.js";
+import { Message, EmbedBuilder, PermissionFlagsBits, TextChannel } from "discord.js";
+import { logLock } from "../modules/modLogs";
 
 export async function lockCommand(message: Message, args: string[]) {
-  if (!message.guild || !message.member) return;
-  if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-    await message.reply("❌ Permission insuffisante.").catch(() => {});
-    return;
-  }
-  const ch = message.mentions.channels.first() as TextChannel | undefined ?? message.channel as TextChannel;
-  if (ch.type !== ChannelType.GuildText) {
-    await message.reply("❌ Salon non compatible.").catch(() => {});
-    return;
-  }
-  await ch.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
-  await message.reply(`🔒 <#${ch.id}> est maintenant verrouillé.`).catch(() => {});
+  if (!message.member?.permissions.has(PermissionFlagsBits.ManageChannels))
+    return message.reply("❌ Tu n'as pas la permission de verrouiller des salons.");
+
+  const channel = (message.mentions.channels.first() ?? message.channel) as TextChannel;
+  const reason  = args.filter(a => !a.startsWith("<#")).join(" ") || "Aucune raison fournie";
+
+  await channel.permissionOverwrites.edit(message.guild!.roles.everyone, { SendMessages: false },
+    { reason: `${message.author.tag}: ${reason}` });
+  await logLock(message.guild!, channel, message.author, reason, true);
+
+  await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setTitle("🔒 Salon verrouillé")
+    .addFields({ name: "Salon", value: `<#${channel.id}>` }, { name: "Raison", value: reason },
+      { name: "Modérateur", value: message.author.tag }).setTimestamp()] });
 }
 
 export async function unlockCommand(message: Message, args: string[]) {
-  if (!message.guild || !message.member) return;
-  if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-    await message.reply("❌ Permission insuffisante.").catch(() => {});
-    return;
-  }
-  const ch = message.mentions.channels.first() as TextChannel | undefined ?? message.channel as TextChannel;
-  if (ch.type !== ChannelType.GuildText) {
-    await message.reply("❌ Salon non compatible.").catch(() => {});
-    return;
-  }
-  await ch.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
-  await message.reply(`🔓 <#${ch.id}> est maintenant déverrouillé.`).catch(() => {});
+  if (!message.member?.permissions.has(PermissionFlagsBits.ManageChannels))
+    return message.reply("❌ Tu n'as pas la permission de déverrouiller des salons.");
+
+  const channel = (message.mentions.channels.first() ?? message.channel) as TextChannel;
+  const reason  = args.filter(a => !a.startsWith("<#")).join(" ") || "Aucune raison fournie";
+
+  await channel.permissionOverwrites.edit(message.guild!.roles.everyone, { SendMessages: null },
+    { reason: `${message.author.tag}: ${reason}` });
+  await logLock(message.guild!, channel, message.author, reason, false);
+
+  await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setTitle("🔓 Salon déverrouillé")
+    .addFields({ name: "Salon", value: `<#${channel.id}>` }, { name: "Raison", value: reason },
+      { name: "Modérateur", value: message.author.tag }).setTimestamp()] });
 }

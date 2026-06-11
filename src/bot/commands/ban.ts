@@ -1,38 +1,50 @@
-import { Message, PermissionFlagsBits, EmbedBuilder } from "discord.js";
+import { Message, EmbedBuilder, PermissionFlagsBits } from "discord.js";
+import { logBan, logUnban } from "../modules/modLogs";
 
 export async function banCommand(message: Message, args: string[]) {
-  if (!message.guild || !message.member) return;
-  if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-    await message.reply("❌ Permission insuffisante.").catch(() => {});
-    return;
-  }
-  const target = message.mentions.users.first();
-  if (!target) { await message.reply("❌ Usage: `!ban @membre [raison]`").catch(() => {}); return; }
+  if (!message.member?.permissions.has(PermissionFlagsBits.BanMembers))
+    return message.reply("❌ Tu n'as pas la permission de bannir.");
+
+  const target = message.mentions.members?.first();
+  if (!target) return message.reply("❌ Mentionne un membre. Ex: `!ban @user raison`");
+  if (!target.bannable) return message.reply("❌ Je ne peux pas bannir ce membre.");
+
   const reason = args.slice(1).join(" ") || "Aucune raison fournie";
-  try {
-    await message.guild.members.ban(target.id, { reason });
-    await message.reply({
-      embeds: [new EmbedBuilder().setColor(0xff4444).setTitle("🔨 Membre banni")
-        .setDescription(`**${target.tag}** a été banni.\nRaison : ${reason}`)
-        .setFooter({ text: "MAI•GESTION" }).setTimestamp()],
-    }).catch(() => {});
-  } catch {
-    await message.reply("❌ Impossible de bannir ce membre.").catch(() => {});
-  }
+  await target.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setTitle("🔨 Tu as été banni")
+    .addFields({ name: "Serveur", value: message.guild!.name }, { name: "Raison", value: reason },
+      { name: "Modérateur", value: message.author.tag }).setTimestamp()] }).catch(() => {});
+
+  await target.ban({ reason: `${message.author.tag}: ${reason}` });
+  await logBan(message.guild!, target.user, message.author, reason);
+
+  await message.channel.send({ embeds: [new EmbedBuilder().setColor(0xff0000).setTitle("🔨 Membre banni")
+    .addFields({ name: "Utilisateur", value: `${target.user.tag} (${target.id})` },
+      { name: "Raison", value: reason }, { name: "Modérateur", value: message.author.tag })
+    .setThumbnail(target.user.displayAvatarURL()).setTimestamp()] });
 }
 
 export async function unbanCommand(message: Message, args: string[]) {
-  if (!message.guild || !message.member) return;
-  if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
-    await message.reply("❌ Permission insuffisante.").catch(() => {});
-    return;
-  }
-  const id = args[0];
-  if (!id) { await message.reply("❌ Usage: `!unban [ID]`").catch(() => {}); return; }
+  if (!message.member?.permissions.has(PermissionFlagsBits.BanMembers))
+    return message.reply("❌ Tu n'as pas la permission de débannir.");
+
+  const userId = args[0];
+  if (!userId || !/^\d{17,19}$/.test(userId))
+    return message.reply("❌ Fournis l'ID. Ex: `!unban 123456789012345678 raison`");
+
+  const reason = args.slice(1).join(" ") || "Aucune raison fournie";
   try {
-    await message.guild.members.unban(id);
-    await message.reply(`✅ Membre \`${id}\` débanni.`).catch(() => {});
+    const bans   = await message.guild!.bans.fetch();
+    const banned = bans.get(userId);
+    if (!banned) return message.reply("❌ Cet utilisateur n'est pas banni.");
+
+    await message.guild!.members.unban(userId, `${message.author.tag}: ${reason}`);
+    await logUnban(message.guild!, banned.user, message.author, reason);
+
+    await message.channel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setTitle("✅ Membre débanni")
+      .addFields({ name: "Utilisateur", value: `${banned.user.tag} (${userId})` },
+        { name: "Raison", value: reason }, { name: "Modérateur", value: message.author.tag })
+      .setThumbnail(banned.user.displayAvatarURL()).setTimestamp()] });
   } catch {
-    await message.reply("❌ Impossible de débannir (ID invalide ?).").catch(() => {});
+    await message.reply("❌ Erreur lors du débannissement.");
   }
 }
