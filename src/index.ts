@@ -16,7 +16,7 @@ import { handleBoost } from "./features/boost.js";
 import { checkAntiLink } from "./features/antilink.js";
 
 const PREFIX    = "!";
-const MOD_CMDS  = new Set(["ban","unban","mute","demute","unmute","lock","unlock"]);
+const MOD_CMDS  = new Set(["ban","unban","mute","demute","unmute","lock","unlock","clear"]);
 const DAILY_CD  = 24 * 60 * 60_000;
 
 const LEVEL_ROLE_NAMES = [
@@ -220,7 +220,7 @@ client.on(Events.MessageCreate, async (message: Message) => {
         .addFields(
           { name:"👤 Tout le monde", value:"`!rank [@m]` — XP & niveau\n`!top` — Top 10 classement\n`!solde [@m]` — Voir ses 🪙\n`!daily` — 50–300🪙 par jour" },
           { name:"🎮 Jeux & Shop", value:"Boutons dans 👾・jeux | Achats dans 🎠・shop | Dons dans ❤️・dons" },
-          ...(isAdmin ? [{ name:"🛡️ Admins", value:"`!ban @m` `!unban [ID]` `!mute @m [min]` `!demute @m` `!lock` `!unlock`\n`!giveaway [durée] [prix]` `!resetxp all`" }] : []),
+          ...(isAdmin ? [{ name:"🛡️ Admins", value:"`!ban @m` `!unban [ID]` `!mute @m [min]` `!demute @m`\n`!lock [#salon]` `!unlock [#salon]` `!clear [1-2000]`\n`!giveaway [durée] [prix]` `!resetxp all`" }] : []),
         )
         .setFooter({text:"MAI•GESTION • Jeux, shop et dons via boutons"}).setTimestamp()
     ] }).catch(() => {});

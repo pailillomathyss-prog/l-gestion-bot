@@ -65,30 +65,69 @@ export async function handleModCommand(msg: Message, cmd: string, args: string[]
     }
     case "lock": {
       const ch = (msg.mentions.channels.first() as TextChannel | undefined) ?? (msg.channel as TextChannel);
-      // Bloquer @everyone
+      const botId = msg.client.user!.id;
+      // Bloquer @everyone + tous les rôles avec overwrite explicite
       await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false, SendMessagesInThreads: false }).catch(() => {});
-      // Bloquer aussi chaque rôle qui a un overwrite explicite (ex: ✅ Membre)
       for (const [, ow] of ch.permissionOverwrites.cache) {
         if (ow.type === 0 && ow.id !== guild.roles.everyone.id) {
           const role = guild.roles.cache.get(ow.id);
           if (role) await ch.permissionOverwrites.edit(role, { SendMessages: false, SendMessagesInThreads: false }).catch(() => {});
         }
       }
-      await msg.reply({ embeds: [E(0xff4444, `🔒 <#${ch.id}> verrouillé — aucun rôle ne peut écrire.`)] });
+      // Le bot garde toujours SendMessages:true
+      await ch.permissionOverwrites.edit(botId, { SendMessages: true, SendMessagesInThreads: true }).catch(() => {});
+      await msg.reply({ embeds: [E(0xff4444, `🔒 <#${ch.id}> verrouillé — seul le bot peut écrire.`)] });
       break;
     }
     case "unlock": {
       const ch = (msg.mentions.channels.first() as TextChannel | undefined) ?? (msg.channel as TextChannel);
-      // Restaurer @everyone
+      const botId = msg.client.user!.id;
       await ch.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: null, SendMessagesInThreads: null }).catch(() => {});
-      // Restaurer tous les overwrites de rôles
       for (const [, ow] of ch.permissionOverwrites.cache) {
         if (ow.type === 0 && ow.id !== guild.roles.everyone.id) {
           const role = guild.roles.cache.get(ow.id);
           if (role) await ch.permissionOverwrites.edit(role, { SendMessages: null, SendMessagesInThreads: null }).catch(() => {});
         }
       }
+      // Retirer l'overwrite explicite du bot (retour à l'héritage)
+      await ch.permissionOverwrites.delete(botId).catch(() => {});
       await msg.reply({ embeds: [E(0x00cc66, `🔓 <#${ch.id}> déverrouillé.`)] });
+      break;
+    }
+    case "clear": {
+      const amount = Math.min(2000, Math.max(1, parseInt(args[0] ?? "100") || 100));
+      const confirm = await msg.reply({ embeds: [E(0xff9900,
+        `⚠️ Supprimer **${amount}** messages dans <#${msg.channel.id}> ?\nTape **\`confirmer\`** dans les 15 secondes.`
+      )] }).catch(() => null);
+      const collected = await (msg.channel as TextChannel).awaitMessages({
+        filter: m => m.author.id === msg.author.id && m.content.toLowerCase() === "confirmer",
+        max: 1, time: 15_000, errors: [],
+      });
+      if (!collected.size) {
+        await confirm?.edit({ embeds: [E(0x888888, "❌ Clear annulé.")] }).catch(() => {});
+        break;
+      }
+      collected.first()?.delete().catch(() => {});
+      await confirm?.delete().catch(() => {});
+      const ch = msg.channel as TextChannel;
+      let deleted = 0;
+      let remaining = amount;
+      // Supprimer aussi le message de commande
+      await msg.delete().catch(() => {});
+      while (remaining > 0) {
+        const batch = Math.min(100, remaining);
+        const fetched = await ch.messages.fetch({ limit: batch }).catch(() => null);
+        if (!fetched || fetched.size === 0) break;
+        // bulkDelete ignore les messages > 14 jours
+        const del = await ch.bulkDelete(fetched, true).catch(() => null);
+        const count = del?.size ?? 0;
+        deleted += count;
+        remaining -= batch;
+        if (count < batch) break; // plus de messages à supprimer
+        await new Promise(r => setTimeout(r, 1000)); // rate-limit safety
+      }
+      const notice = await ch.send({ embeds: [E(0x00cc66, `🗑️ **${deleted}** message(s) supprimé(s).`)] }).catch(() => null);
+      if (notice) setTimeout(() => notice.delete().catch(() => {}), 5000);
       break;
     }
   }
