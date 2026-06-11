@@ -6,7 +6,7 @@ import { onQuestProgress } from "./questSystem.js";
 // XP par message (8-15 aléatoire)
 const XP_PER_MESSAGE_MIN = 8;
 const XP_PER_MESSAGE_MAX = 15;
-const XP_COOLDOWN_MS = 60_000; // 1 min entre gains
+const XP_COOLDOWN_MS = 15_000; // 15s entre gains
 const XP_PER_VOICE_TICK = 12; // XP toutes les 10 min en vocal
 const COINS_PER_MESSAGE_MIN = 8;
 const COINS_PER_MESSAGE_MAX = 15;
