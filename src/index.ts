@@ -250,6 +250,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return safeReply(interaction as ModalSubmitInteraction, () => handleDonModal(interaction as ModalSubmitInteraction));
 });
 
+// ── Garde-fou anti-crash ──────────────────────────────────────────────────────
+process.on("uncaughtException",  e  => console.error("❌ uncaughtException:",  e));
+process.on("unhandledRejection", (r, p) => console.error("❌ unhandledRejection:", r, p));
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 const token = process.env["DISCORD_TOKEN"];
 if (!token) { console.error("❌ DISCORD_TOKEN manquant !"); process.exit(1); }

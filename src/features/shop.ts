@@ -2,7 +2,7 @@ import {
   Guild, TextChannel, ChannelType, EmbedBuilder, GuildMember,
   ActionRowBuilder, ButtonBuilder, ButtonStyle, ButtonInteraction,
 } from "discord.js";
-import { getUser, saveUser } from "../db.js";
+import { getUser, saveUser, setState } from "../db.js";
 import { xpToLevel } from "./xp.js";
 
 // ── Catalogue ─────────────────────────────────────────────────────────────────
@@ -192,9 +192,7 @@ export async function handleShopButton(btn: ButtonInteraction) {
       return;
     }
     await saveUser(btn.guild.id, btn.user.id, { ...data, coins: data.coins - mi.price });
-    // Boost enregistré en DB comme flag temporaire (géré dans xp.ts via getState)
     const boostKey = `boost_${mid}:${btn.guild.id}:${btn.user.id}`;
-    const { setState } = await import("../db.js");
     await setState(boostKey, String(Date.now() + 3_600_000));
     await btn.editReply({ embeds: [
       new EmbedBuilder().setColor(0xffd700).setTitle("🔮 Boost activé !")
