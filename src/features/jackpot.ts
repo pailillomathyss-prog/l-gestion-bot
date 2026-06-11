@@ -43,7 +43,7 @@ export async function postJackpotPanelIfNeeded(guild: Guild, botId: string) {
   const ch = await getOrCreateJackpotChannel(guild);
   if (!ch) return;
 
-  const recent = await ch.messages.fetch({ limit: 10 }).catch(() => null);
+  const recent = await ch.messages.fetch({ limit: 50 }).catch(() => null);
   if (recent?.some(m => m.author.id === botId && m.embeds[0]?.title?.includes("Jackpot"))) return;
 
   await refreshJackpotPanel(guild, ch);
