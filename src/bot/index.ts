@@ -30,6 +30,7 @@ import {
 import { handleGameButton, handleGameSelect, postGameMenuIfNeeded } from "./modules/gameSystem.js";
 import { claimQuest, getMyQuestProgress } from "./modules/questSystem.js";
 import { postDailyMenuIfNeeded, handleDailyClaim, handleDailyStreak } from "./modules/dailySystem.js";
+import { postJackpotPanelIfNeeded, handleJackpotButton, checkWeeklyDraw } from "../features/jackpot.js";
 import {
   DONATION_BTN, DONATION_MODAL,
   postDonationPanelIfNeeded, handleDonationButton, handleDonationModal,
@@ -52,7 +53,7 @@ async function postShopIfNeeded(guild: import("discord.js").Guild, botId: string
   ) as TextChannel | undefined;
   if (!shopChannel) return;
   try {
-    const recent = await shopChannel.messages.fetch({ limit: 15 });
+    const recent = await shopChannel.messages.fetch({ limit: 50 });
     if (recent.some(m => m.author.id === botId && m.embeds[0]?.title?.includes("Boutique"))) return;
     await shopChannel.send({ embeds: [buildGenericShopEmbed()], components: buildGenericShopComponents() });
     logger.info(`✅ Panneau boutique posté dans #${shopChannel.name}`);
@@ -67,7 +68,7 @@ async function postGameRulesIfNeeded(guild: import("discord.js").Guild, botId: s
   ) as TextChannel | undefined;
   if (!reglesCh) return;
   try {
-    const recent = await reglesCh.messages.fetch({ limit: 15 });
+    const recent = await reglesCh.messages.fetch({ limit: 50 });
     if (recent.some(m => m.author.id === botId && m.embeds[0]?.title?.includes("Règles"))) return;
 
     const embed = new EmbedBuilder()
@@ -124,6 +125,7 @@ client.once(Events.ClientReady, async (c) => {
     await postShopIfNeeded(guild, c.user.id);
     await postGameMenuIfNeeded(guild, c.user.id);
     await postDailyMenuIfNeeded(guild, c.user.id);
+    await postJackpotPanelIfNeeded(guild, c.user.id);
     await postDonationPanelIfNeeded(guild, c.user.id);
     await postGameRulesIfNeeded(guild, c.user.id);
 
@@ -139,6 +141,16 @@ client.once(Events.ClientReady, async (c) => {
       await processVoiceXP(guild).catch(() => {});
     }
   }, 10 * 60 * 1000);
+
+  // Tirage jackpot hebdomadaire - vérification toutes les heures
+  setInterval(async () => {
+    for (const [, guild] of c.guilds.cache) {
+      await checkWeeklyDraw(guild, c).catch(() => {});
+    }
+  }, 60 * 60 * 1000);
+  for (const [, guild] of c.guilds.cache) {
+    await checkWeeklyDraw(guild, c).catch(() => {});
+  }
 
   logger.info("🎙️ XP vocal actif");
   logger.info("🎉 Giveaway system actif");
@@ -254,6 +266,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isButton() && interaction.customId === "daily_streak") {
     await handleDailyStreak(interaction as ButtonInteraction).catch(async err => {
       logger.error({ err }, "Erreur daily_streak");
+      if (!interaction.replied && !interaction.deferred) await (interaction as ButtonInteraction).reply({ content: "❌ Erreur.", ephemeral: true }).catch(() => {});
+    });
+    return;
+  }
+
+  // ── Jackpot ──────────────────────────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "jackpot_view") {
+    await handleJackpotButton(interaction as ButtonInteraction).catch(async err => {
+      logger.error({ err }, "Erreur jackpot_view");
       if (!interaction.replied && !interaction.deferred) await (interaction as ButtonInteraction).reply({ content: "❌ Erreur.", ephemeral: true }).catch(() => {});
     });
     return;
