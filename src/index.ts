@@ -4,7 +4,7 @@ import {
   GuildMember, Message, ButtonInteraction,
   UserSelectMenuInteraction, ModalSubmitInteraction, PermissionFlagsBits,
 } from "discord.js";
-import { initDb, getUser, saveUser, getState, setState, resetAllXP } from "./db.js";
+import { initDb, getUser, saveUser, getState, setState, resetAllXP, getTopUsers } from "./db.js";
 import { handleModCommand, initMod } from "./features/mod.js";
 import { postRulesIfNeeded, syncPermissions, handleRulesAccept, RULES_BTN_ID } from "./features/rules.js";
 import { handleMessageXP, tickVoiceXP, rankCommand, xpToLevel, postLevelsPanelIfNeeded } from "./features/xp.js";
@@ -104,6 +104,35 @@ client.on(Events.MessageCreate, async (message: Message) => {
     return;
   }
 
+  // ── !top ─────────────────────────────────────────────────────────────────
+  if (command === "top" || command === "leaderboard" || command === "classement") {
+    const cmdsCh = message.guild.channels.cache.find(c =>
+      c.name.includes("cmds") || c.name.includes("🌐") || c.name.includes("commandes")
+    );
+    if (cmdsCh && message.channel.id !== cmdsCh.id) {
+      await message.reply({ content:`❌ Utilise cette commande dans <#${cmdsCh.id}> !`, allowedMentions:{ repliedUser:false } }).catch(() => {});
+      return;
+    }
+    const topUsers = await getTopUsers(message.guild.id, 10).catch(() => [] as Awaited<ReturnType<typeof getTopUsers>>);
+    if (!topUsers.length) {
+      await message.reply("📊 Aucune donnée pour l'instant — soyez actifs !").catch(() => {}); return;
+    }
+    const medals = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"];
+    const lines: string[] = [];
+    for (let i = 0; i < topUsers.length; i++) {
+      const u = topUsers[i]!;
+      const member = message.guild.members.cache.get(u.userId);
+      const name   = member?.displayName ?? `<@${u.userId}>`;
+      lines.push(`${medals[i] ?? `**${i+1}.**`} **${name}** — Niv. **${u.level}** · ${u.xp.toLocaleString("fr-FR")} XP · ${u.coins.toLocaleString("fr-FR")}🪙`);
+    }
+    await message.reply({ embeds: [
+      new EmbedBuilder().setColor(0xffd700).setTitle("🏆 Top 10 — MAI•GESTION")
+        .setDescription(lines.join("\n"))
+        .setFooter({ text:"MAI•GESTION • Classement XP" }).setTimestamp()
+    ] }).catch(() => {});
+    return;
+  }
+
   // ── !solde / !coins / !balance ───────────────────────────────────────────
   if (["solde","coins","balance","pièces","pieces"].includes(command)) {
     const target = message.mentions.members?.first() ?? (message.member as GuildMember);
@@ -184,8 +213,9 @@ client.on(Events.MessageCreate, async (message: Message) => {
     await message.reply({ embeds: [
       new EmbedBuilder().setColor(0x9b59b6).setTitle("📋 Commandes MAI•GESTION")
         .addFields(
-          { name:"👤 Tout le monde", value:"`!rank [@membre]` — XP/niveau\n`!solde [@membre]` — Pièces\n`!daily` — Récompense quotidienne (50–300🪙)" },
-          ...(isAdmin ? [{ name:"🛡️ Admins", value:"`!ban @m` `!unban [ID]` `!mute @m [min]` `!demute @m` `!lock` `!unlock` `!giveaway [durée] [prix]` `!resetxp all`" }] : []),
+          { name:"👤 Tout le monde", value:"`!rank [@m]` — XP & niveau\n`!top` — Top 10 classement\n`!solde [@m]` — Voir ses 🪙\n`!daily` — 50–300🪙 par jour" },
+          { name:"🎮 Jeux & Shop", value:"Boutons dans 👾・jeux | Achats dans 🎠・shop | Dons dans ❤️・dons" },
+          ...(isAdmin ? [{ name:"🛡️ Admins", value:"`!ban @m` `!unban [ID]` `!mute @m [min]` `!demute @m` `!lock` `!unlock`\n`!giveaway [durée] [prix]` `!resetxp all`" }] : []),
         )
         .setFooter({text:"MAI•GESTION • Jeux, shop et dons via boutons"}).setTimestamp()
     ] }).catch(() => {});
