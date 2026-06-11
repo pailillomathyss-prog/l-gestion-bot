@@ -24,6 +24,10 @@ const commands = [
     .addUserOption(o => o.setName("membre").setDescription("Membre à consulter").setRequired(false)).toJSON(),
 
   // ── Admin ──────────────────────────────────────────────────────────────────
+  new SlashCommandBuilder().setName("addcoins").setDescription("(Admin) Donner ou retirer des pièces à un membre")
+    .setDefaultMemberPermissions(ADMIN)
+    .addUserOption(o => o.setName("membre").setDescription("Membre à créditer / débiter").setRequired(true))
+    .addIntegerOption(o => o.setName("montant").setDescription("Pièces à donner (négatif pour retirer)").setRequired(true)).toJSON(),
   new SlashCommandBuilder().setName("ban").setDescription("(Admin) Bannir un membre")
     .setDefaultMemberPermissions(ADMIN)
     .addUserOption(o => o.setName("membre").setDescription("Membre à bannir").setRequired(true))
