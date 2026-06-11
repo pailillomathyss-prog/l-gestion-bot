@@ -226,9 +226,14 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
         const ch     = (interaction.options.getChannel("salon") as TextChannel | null) ?? interaction.channel as TextChannel;
         const reason = interaction.options.getString("raison") ?? "Aucune raison fournie";
         await interaction.deferReply({ ephemeral: true });
-        await ch.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
-        await logLock(interaction.guild, ch, interaction.user, reason, true);
-        await interaction.editReply(`✅ <#${ch.id}> verrouillé.`);
+        try {
+          const everyoneRole = interaction.guild.roles.cache.get(interaction.guild.id)
+            ?? await interaction.guild.roles.fetch(interaction.guild.id).catch(() => null);
+          if (!everyoneRole) { await interaction.editReply("❌ Rôle @everyone introuvable."); return; }
+          await ch.permissionOverwrites.edit(everyoneRole, { SendMessages: false, AddReactions: false, CreatePublicThreads: false });
+          await logLock(interaction.guild, ch, interaction.user, reason, true);
+          await interaction.editReply(`✅ <#${ch.id}> verrouillé.`);
+        } catch (err: any) { await interaction.editReply(`❌ Erreur : \`${err?.message ?? err}\``); }
         break;
       }
 
@@ -237,9 +242,14 @@ export async function handleSlashCommand(interaction: ChatInputCommandInteractio
         const ch     = (interaction.options.getChannel("salon") as TextChannel | null) ?? interaction.channel as TextChannel;
         const reason = interaction.options.getString("raison") ?? "Aucune raison fournie";
         await interaction.deferReply({ ephemeral: true });
-        await ch.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: null });
-        await logLock(interaction.guild, ch, interaction.user, reason, false);
-        await interaction.editReply(`✅ <#${ch.id}> déverrouillé.`);
+        try {
+          const everyoneRole = interaction.guild.roles.cache.get(interaction.guild.id)
+            ?? await interaction.guild.roles.fetch(interaction.guild.id).catch(() => null);
+          if (!everyoneRole) { await interaction.editReply("❌ Rôle @everyone introuvable."); return; }
+          await ch.permissionOverwrites.edit(everyoneRole, { SendMessages: null, AddReactions: null, CreatePublicThreads: null });
+          await logLock(interaction.guild, ch, interaction.user, reason, false);
+          await interaction.editReply(`✅ <#${ch.id}> déverrouillé.`);
+        } catch (err: any) { await interaction.editReply(`❌ Erreur : \`${err?.message ?? err}\``); }
         break;
       }
 
