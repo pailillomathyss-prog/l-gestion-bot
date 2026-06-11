@@ -7,7 +7,7 @@ import {
 import { initDb, getUser, saveUser, getState, setState, resetAllXP } from "./db.js";
 import { handleModCommand, initMod } from "./features/mod.js";
 import { postRulesIfNeeded, syncPermissions, handleRulesAccept, RULES_BTN_ID } from "./features/rules.js";
-import { handleMessageXP, tickVoiceXP, rankCommand, xpToLevel } from "./features/xp.js";
+import { handleMessageXP, tickVoiceXP, rankCommand, xpToLevel, postLevelsPanelIfNeeded } from "./features/xp.js";
 import { postGamePanelIfNeeded, postGameRulesIfNeeded, handleGameButton, handleDuelSelect } from "./features/games.js";
 import { postShopIfNeeded, handleShopButton } from "./features/shop.js";
 import { launchGiveaway, resumeGiveaways, handleGiveawayJoin, GIVEAWAY_JOIN_BTN } from "./features/giveaway.js";
@@ -51,6 +51,7 @@ client.once(Events.ClientReady, async (c) => {
     await postGameRulesIfNeeded(guild, c.user.id).catch(() => {});
     await postShopIfNeeded(guild, c.user.id).catch(() => {});
     await postDonPanelIfNeeded(guild, c.user.id).catch(() => {});
+    await postLevelsPanelIfNeeded(guild, c.user.id).catch(() => {});
     console.log(`✅ ${guild.name} initialisé`);
   }
 
@@ -68,6 +69,7 @@ client.on(Events.GuildCreate, async (guild) => {
   await postGameRulesIfNeeded(guild, client.user!.id).catch(() => {});
   await postShopIfNeeded(guild, client.user!.id).catch(() => {});
   await postDonPanelIfNeeded(guild, client.user!.id).catch(() => {});
+  await postLevelsPanelIfNeeded(guild, client.user!.id).catch(() => {});
 });
 
 client.on(Events.GuildMemberUpdate, async (o, n) => {

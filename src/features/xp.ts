@@ -125,3 +125,65 @@ export async function rankCommand(message: Message) {
     .setFooter({ text: "MAI•GESTION" }).setTimestamp()
   ] }).catch(() => {});
 }
+
+// ── Explicatif niveaux dans ⚖️・levels ─────────────────────────────────────────
+export async function postLevelsPanelIfNeeded(guild: Guild, botId: string) {
+  const ch = guild.channels.cache.find(
+    c => c.type === ChannelType.GuildText &&
+    (c.name.includes("⚖️") || c.name.toLowerCase().includes("levels") || c.name.toLowerCase().includes("niveau"))
+  ) as TextChannel | undefined;
+  if (!ch) return;
+
+  const recent = await ch.messages.fetch({ limit: 10 }).catch(() => null);
+  if (recent?.some(m => m.author.id === botId && m.embeds[0]?.title?.includes("Système de Niveaux"))) return;
+
+  // Tableau des paliers : level → XP requis
+  const rows = MILESTONES.map(m => {
+    const xpNeeded = levelToXP(m.level).toLocaleString("fr-FR");
+    return `${m.emoji ?? "•"} **${m.name}** — Niveau ${m.level} *(${xpNeeded} XP)*`;
+  });
+
+  await ch.send({ embeds: [
+    new EmbedBuilder()
+      .setColor(0x9b59b6)
+      .setTitle("⚖️ Système de Niveaux — MAI•GESTION")
+      .setDescription(
+        "Progresse en étant actif sur le serveur ! Les rôles de niveau sont créés **automatiquement** dès qu'un membre les atteint."
+      )
+      .addFields(
+        {
+          name: "💬 Gagner de l'XP",
+          value:
+            "• **Message** : 10–20 XP *(cooldown 1 min)*\n" +
+            "• **Vocal** : 15 XP toutes les 5 min\n" +
+            "• **Achats** : via la boutique 🧸\n" +
+            "• **Daily** : `!daily` → 50–300 🪙 et XP bonus",
+          inline: false,
+        },
+        {
+          name: "📐 Formule de niveau",
+          value:
+            "```\nNiveau  = floor( √(XP ÷ 100) )\nXP requis = Niveau² × 100\n```\nExemple : Niveau 10 = **1 000 XP** | Niveau 100 = **1 000 000 XP**",
+          inline: false,
+        },
+        {
+          name: "🏅 Paliers & Rôles (créés au fur et à mesure)",
+          value: rows.slice(0, 7).join("\n"),
+          inline: true,
+        },
+        {
+          name: "\u200b",
+          value: rows.slice(7).join("\n"),
+          inline: true,
+        },
+        {
+          name: "📊 Voir son niveau",
+          value: "Utilise `!rank` ou `!rank @membre` dans 🌐・cmds",
+          inline: false,
+        },
+      )
+      .setFooter({ text: "MAI•GESTION • Les rôles de niveau remplacent le précédent à chaque palier" })
+      .setTimestamp(),
+  ] }).catch(() => {});
+  console.log(`⚖️ Panel niveaux → #${ch.name}`);
+}
