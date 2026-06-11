@@ -142,15 +142,9 @@ client.once(Events.ClientReady, async (c) => {
     }
   }, 10 * 60 * 1000);
 
-  // Tirage jackpot hebdomadaire - vérification toutes les heures
-  setInterval(async () => {
-    for (const [, guild] of c.guilds.cache) {
-      await checkWeeklyDraw(guild, c).catch(() => {});
-    }
-  }, 60 * 60 * 1000);
-  for (const [, guild] of c.guilds.cache) {
-    await checkWeeklyDraw(guild, c).catch(() => {});
-  }
+  // Vérification tirage jackpot (toutes les heures)
+  setInterval(async () => { await checkWeeklyDraw(c).catch(() => {}); }, 60 * 60 * 1000);
+  await checkWeeklyDraw(c).catch(() => {});
 
   logger.info("🎙️ XP vocal actif");
   logger.info("🎉 Giveaway system actif");
