@@ -9,6 +9,9 @@ const commands = [
   new SlashCommandBuilder().setName("rank").setDescription("Affiche ton profil XP ou celui d'un membre")
     .addUserOption(o => o.setName("membre").setDescription("Membre à consulter").setRequired(false)).toJSON(),
   new SlashCommandBuilder().setName("leaderboard").setDescription("Classement des 10 meilleurs membres").toJSON(),
+  new SlashCommandBuilder().setName("jackpot").setDescription("Voir la cagnotte jackpot communautaire")
+    .addBooleanOption(o => o.setName("forcer").setDescription("(Admin) Forcer le tirage immédiatement").setRequired(false)).toJSON(),
+
   new SlashCommandBuilder().setName("balance").setDescription("Affiche ton solde de pièces").toJSON(),
   new SlashCommandBuilder().setName("shop").setDescription("Affiche la boutique avec ton solde et tes rôles").toJSON(),
   new SlashCommandBuilder().setName("buy").setDescription("Acheter un rôle dans la boutique")
