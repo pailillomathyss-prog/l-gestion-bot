@@ -35,7 +35,7 @@ function pickGacha() {
 // ── Duels en attente ──────────────────────────────────────────────────────────
 const duels = new Map<string, { challengerId:string; bet:number }>();
 
-// ── Salon temporaire (best-effort) ────────────────────────────────────────────
+// ── Salon privé de jeu ────────────────────────────────────────────────────────
 const GAME_CAT = "🎮 Parties en Cours";
 async function tryOpenChannel(guild:Guild, name:string, ...uids:string[]): Promise<TextChannel|null> {
   try {
@@ -50,22 +50,15 @@ async function tryOpenChannel(guild:Guild, name:string, ...uids:string[]): Promi
       ] }) as TextChannel;
   } catch { return null; }
 }
-function closeAfter(ch:TextChannel, ms:number) {
-  setTimeout(async () => {
-    await ch.send({embeds:[new EmbedBuilder().setColor(0x555555).setDescription("🔒 Salon fermé.").setTimestamp()]}).catch(()=>{});
-    await new Promise(r=>setTimeout(r,3000));
-    await ch.delete().catch(()=>{});
-  }, ms);
-}
 
-// ── Helper : répond à une interaction de façon ultra-fiable ──────────────────
-// Lance deferReply ET getUser EN PARALLÈLE → interaction acquittée en < 200 ms
-async function ack(btn:ButtonInteraction, guildId:string, userId:string) {
-  const [, data] = await Promise.all([
-    btn.deferReply({ ephemeral: true }),
-    getUser(guildId, userId),
-  ]);
-  return data;
+// ── Boutons Rejouer / Fermer ──────────────────────────────────────────────────
+function buildReplayRow(type:"flip"|"slot"|"bj"|"gacha"|"duel", bet:number): ActionRowBuilder<ButtonBuilder> {
+  const replayId = type==="gacha" ? "g_replay_gacha" : `g_replay_${type}_${bet}`;
+  const replayLabel = type==="gacha" ? `🔁 Rejouer (${GACHA_PRICE}🪙)` : `🔁 Rejouer (${bet}🪙)`;
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder().setCustomId(replayId).setLabel(replayLabel).setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("g_close_chan").setLabel("🔒 Fermer le salon").setStyle(ButtonStyle.Secondary),
+  );
 }
 
 // ── Panel 👾・jeux ─────────────────────────────────────────────────────────────
@@ -78,7 +71,7 @@ export async function postGamePanelIfNeeded(guild:Guild, botId:string) {
   if (recent?.some(m=>m.author.id===botId&&m.embeds[0]?.title?.includes("Jeux"))) return;
   await ch.send({
     embeds:[new EmbedBuilder().setColor(0x9b59b6).setTitle("👾 Jeux — Casino & Fun")
-      .setDescription("**Mise tes 🪙 et tente ta chance !**\nClique un bouton pour jouer — résultat instantané !")
+      .setDescription("**Mise tes 🪙 et tente ta chance !**\nClique un bouton pour jouer — un salon privé s'ouvre pour toi !")
       .addFields(
         {name:"🪙 Coin Flip",value:"Pile ou face — 50/50",inline:true},
         {name:"🎰 Slots",value:"Jusqu'à **×20** ta mise !",inline:true},
@@ -86,7 +79,7 @@ export async function postGamePanelIfNeeded(guild:Guild, botId:string) {
         {name:"🎲 Duel 1v1",value:"Gagnant prend tout !",inline:true},
         {name:`🎁 Gacha (${GACHA_PRICE}🪙)`,value:"11 rôles, 6 raretés",inline:true},
       )
-      .setFooter({text:"MAI•GESTION • Mise minimum 10🪙"}).setTimestamp()],
+      .setFooter({text:"MAI•GESTION • Un salon privé s'ouvre après chaque partie !"}).setTimestamp()],
     components:[
       new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId("g_flip_10").setLabel("🪙 Flip 10").setStyle(ButtonStyle.Primary),
@@ -127,7 +120,7 @@ export async function postGameRulesIfNeeded(guild:Guild, botId:string) {
       {name:"💰 Pièces",value:"• Messages : 10–20🪙/min\n• Vocal : 15🪙/5min\n• `!daily` : 50–300🪙"},
       {name:"🎮 Jeux",value:`🪙 Flip (50/50) | 🎰 Slots (×1.5→×20) | 🃏 Blackjack (×2) | 🎲 Duel 1v1 | 🎁 Gacha (${GACHA_PRICE}🪙)`},
       {name:"🎁 Raretés Gacha",value:"🎀🌿 55% | ⚡🌸 25% | 💜🔥 12% | 💎🌟 6% | 👑🌌 1.8% | ⚜️ 0.2%"},
-      {name:"⚠️ Règles",value:"• Mise min. 10🪙\n• Impossible de miser plus que son solde"},
+      {name:"⚠️ Règles",value:"• Mise min. 10🪙\n• Impossible de miser plus que son solde\n• Utilise 🔁 pour rejouer ou 🔒 pour fermer ton salon"},
     ).setFooter({text:"MAI•GESTION"}).setTimestamp()
   ]}).catch(()=>{});
   console.log(`📩 Règles jeux → #${ch.name}`);
@@ -136,99 +129,148 @@ export async function postGameRulesIfNeeded(guild:Guild, botId:string) {
 // ── 🪙 Coin Flip ──────────────────────────────────────────────────────────────
 async function doFlip(btn:ButtonInteraction, bet:number) {
   if (!btn.guild) { await btn.reply({content:"❌ Serveur introuvable.",ephemeral:true}).catch(()=>{}); return; }
-  // deferReply + getUser EN PARALLÈLE — interaction acquittée en < 200ms
-  const [, data] = await Promise.all([
-    btn.deferReply({ephemeral:true}),
-    getUser(btn.guild.id, btn.user.id),
-  ]);
-  if (data.coins < bet) {
-    await btn.editReply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`}); return;
-  }
-  const win   = Math.random()<0.5;
+  const [, data] = await Promise.all([btn.deferReply({ephemeral:true}), getUser(btn.guild.id, btn.user.id)]);
+  if (data.coins < bet) { await btn.editReply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`}); return; }
+  const win = Math.random()<0.5;
   const delta = win ? bet : -bet;
   const newCoins = data.coins + delta;
-  const embed = new EmbedBuilder()
+  const embed = buildFlipEmbed(win, bet, newCoins);
+  await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
+  await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  const ch = await tryOpenChannel(btn.guild, `flip-${btn.user.username}`, btn.user.id);
+  if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("flip", bet)]}).catch(()=>{});
+}
+
+function buildFlipEmbed(win:boolean, bet:number, newCoins:number) {
+  return new EmbedBuilder()
     .setColor(win?0x00cc66:0xff4444)
     .setTitle(`🪙 Coin Flip — ${win?"🟡 Face · Victoire !":"⚫ Pile · Défaite !"}`)
     .setDescription(`Mise : **${bet}🪙**  ${win?`→ +**${bet}🪙**`:`→ -**${bet}🪙**`}\n💰 Solde : **${newCoins.toLocaleString("fr-FR")}🪙**`)
     .setFooter({text:"MAI•GESTION"}).setTimestamp();
-  await btn.editReply({embeds:[embed]});
+}
+
+async function replayFlip(btn:ButtonInteraction, bet:number) {
+  if (!btn.guild) return;
+  await btn.deferUpdate();
+  const data = await getUser(btn.guild.id, btn.user.id);
+  if (data.coins < bet) { await btn.editReply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`, embeds:[], components:[]}); return; }
+  const win = Math.random()<0.5;
+  const delta = win ? bet : -bet;
+  const newCoins = data.coins + delta;
+  await btn.editReply({embeds:[buildFlipEmbed(win, bet, newCoins)], components:[buildReplayRow("flip", bet)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
-  // Salon temporaire (best-effort, après avoir répondu)
-  const ch = await tryOpenChannel(btn.guild, `flip-${btn.user.username}`, btn.user.id);
-  if (ch) { await ch.send({content:`<@${btn.user.id}>`,embeds:[embed.setFooter({text:"MAI•GESTION • Fermé dans 45s"}).setTimestamp()]}).catch(()=>{}); closeAfter(ch,45_000); }
 }
 
 // ── 🎰 Slots ──────────────────────────────────────────────────────────────────
-const SYMS  = ["🍒","🍋","🍊","⭐","💎","7️⃣"];
-const MULTS : Record<string,number> = {"🍒":2,"🍋":2.5,"🍊":3,"⭐":5,"💎":10,"7️⃣":20};
+const SYMS = ["🍒","🍋","🍊","⭐","💎","7️⃣"];
+const MULTS: Record<string,number> = {"🍒":2,"🍋":2.5,"🍊":3,"⭐":5,"💎":10,"7️⃣":20};
+
 async function doSlots(btn:ButtonInteraction, bet:number) {
   if (!btn.guild) { await btn.reply({content:"❌ Serveur introuvable.",ephemeral:true}).catch(()=>{}); return; }
-  const [, data] = await Promise.all([
-    btn.deferReply({ephemeral:true}),
-    getUser(btn.guild.id, btn.user.id),
-  ]);
+  const [, data] = await Promise.all([btn.deferReply({ephemeral:true}), getUser(btn.guild.id, btn.user.id)]);
   if (data.coins < bet) { await btn.editReply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`}); return; }
+  const {r, delta, txt} = spinSlots(bet);
+  const newCoins = data.coins + delta;
+  const embed = buildSlotsEmbed(r, txt, delta, newCoins);
+  await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
+  await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  const ch = await tryOpenChannel(btn.guild, `slots-${btn.user.username}`, btn.user.id);
+  if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("slot", bet)]}).catch(()=>{});
+}
+
+function spinSlots(bet:number) {
   const r=[SYMS[Math.floor(Math.random()*6)]!,SYMS[Math.floor(Math.random()*6)]!,SYMS[Math.floor(Math.random()*6)]!];
   let delta=0, txt="";
   if (r[0]===r[1]&&r[1]===r[2]) { const m=MULTS[r[0]]??2; delta=Math.floor(bet*m); txt=`🎉 **JACKPOT !** ×${m} → **+${delta}🪙**`; }
   else if (r[0]===r[1]||r[1]===r[2]||r[0]===r[2]) { delta=Math.floor(bet*1.5); txt=`✨ **2 identiques !** ×1.5 → **+${delta}🪙**`; }
   else { delta=-bet; txt=`💸 **Rien…** → **-${bet}🪙**`; }
-  const newCoins = data.coins+delta;
-  const embed = new EmbedBuilder().setColor(delta>0?0x00cc66:0xff4444).setTitle("🎰 Machine à sous")
+  return {r, delta, txt};
+}
+
+function buildSlotsEmbed(r:string[], txt:string, delta:number, newCoins:number) {
+  return new EmbedBuilder().setColor(delta>0?0x00cc66:0xff4444).setTitle("🎰 Machine à sous")
     .setDescription(`**${r.join(" | ")}**\n\n${txt}\n💰 Solde : **${newCoins.toLocaleString("fr-FR")}🪙**`)
     .setFooter({text:"MAI•GESTION"}).setTimestamp();
-  await btn.editReply({embeds:[embed]});
+}
+
+async function replaySlots(btn:ButtonInteraction, bet:number) {
+  if (!btn.guild) return;
+  await btn.deferUpdate();
+  const data = await getUser(btn.guild.id, btn.user.id);
+  if (data.coins < bet) { await btn.editReply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`, embeds:[], components:[]}); return; }
+  const {r, delta, txt} = spinSlots(bet);
+  const newCoins = data.coins + delta;
+  await btn.editReply({embeds:[buildSlotsEmbed(r, txt, delta, newCoins)], components:[buildReplayRow("slot", bet)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
-  const ch = await tryOpenChannel(btn.guild, `slots-${btn.user.username}`, btn.user.id);
-  if (ch) { await ch.send({content:`<@${btn.user.id}>`,embeds:[embed.setFooter({text:"MAI•GESTION • Fermé dans 45s"}).setTimestamp()]}).catch(()=>{}); closeAfter(ch,45_000); }
 }
 
 // ── 🃏 Blackjack ──────────────────────────────────────────────────────────────
 function card(){return [2,3,4,5,6,7,8,9,10,10,10,10,11][Math.floor(Math.random()*13)]!;}
 function tot(c:number[]){let t=c.reduce((a,b)=>a+b,0),a=c.filter(x=>x===11).length;while(t>21&&a-->0)t-=10;return t;}
+
 async function doBJ(btn:ButtonInteraction, bet:number) {
   if (!btn.guild) { await btn.reply({content:"❌ Serveur introuvable.",ephemeral:true}).catch(()=>{}); return; }
-  const [, data] = await Promise.all([
-    btn.deferReply({ephemeral:true}),
-    getUser(btn.guild.id, btn.user.id),
-  ]);
+  const [, data] = await Promise.all([btn.deferReply({ephemeral:true}), getUser(btn.guild.id, btn.user.id)]);
   if (data.coins < bet) { await btn.editReply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`}); return; }
+  const {embed, delta} = playBJ(bet, data.coins);
+  const newCoins = data.coins + delta;
+  await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
+  await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  const ch = await tryOpenChannel(btn.guild, `blackjack-${btn.user.username}`, btn.user.id);
+  if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("bj", bet)]}).catch(()=>{});
+}
+
+function playBJ(bet:number, currentCoins:number) {
   const p=[card(),card()], d=[card(),card()];
   const pT=tot(p); let dT=tot(d);
   let delta=0, res="";
   if (pT===21) { delta=Math.floor(bet*1.5); res=`🎉 **Blackjack !** ×1.5 → **+${delta}🪙**`; }
-  else { while(dT<17){d.push(card());dT=tot(d);}
+  else {
+    while(dT<17){d.push(card());dT=tot(d);}
     if      (pT>21)          {delta=-bet;  res=`💥 Bust (${pT}) → **-${bet}🪙**`;}
     else if (dT>21||pT>dT)   {delta=bet;   res=`✅ Victoire ! ${pT} vs ${dT} → **+${bet}🪙**`;}
     else if (pT===dT)        {delta=0;     res=`🤝 Égalité ${pT} — Remboursé`;}
     else                     {delta=-bet;  res=`❌ Défaite ${pT} vs ${dT} → **-${bet}🪙**`;}
   }
-  const newCoins = data.coins+delta;
+  const newCoins = currentCoins + delta;
   const embed = new EmbedBuilder().setColor(delta>0?0x00cc66:delta===0?0xffd700:0xff4444).setTitle("🃏 Blackjack")
     .addFields({name:"🧑 Toi",value:`**${p.join("+")}=${pT}**`,inline:true},{name:"🏦 Croupier",value:`**${d.join("+")}=${dT}**`,inline:true})
     .setDescription(`${res}\n💰 Solde : **${newCoins.toLocaleString("fr-FR")}🪙**`)
     .setFooter({text:"MAI•GESTION"}).setTimestamp();
-  await btn.editReply({embeds:[embed]});
+  return {embed, delta};
+}
+
+async function replayBJ(btn:ButtonInteraction, bet:number) {
+  if (!btn.guild) return;
+  await btn.deferUpdate();
+  const data = await getUser(btn.guild.id, btn.user.id);
+  if (data.coins < bet) { await btn.editReply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`, embeds:[], components:[]}); return; }
+  const {embed, delta} = playBJ(bet, data.coins);
+  const newCoins = data.coins + delta;
+  await btn.editReply({embeds:[embed], components:[buildReplayRow("bj", bet)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
-  const ch = await tryOpenChannel(btn.guild, `blackjack-${btn.user.username}`, btn.user.id);
-  if (ch) { await ch.send({content:`<@${btn.user.id}>`,embeds:[embed.setFooter({text:"MAI•GESTION • Fermé dans 60s"}).setTimestamp()]}).catch(()=>{}); closeAfter(ch,60_000); }
 }
 
 // ── 🎁 Gacha ──────────────────────────────────────────────────────────────────
 async function doGacha(btn:ButtonInteraction) {
   if (!btn.guild) { await btn.reply({content:"❌ Serveur introuvable.",ephemeral:true}).catch(()=>{}); return; }
-  const [, data] = await Promise.all([
-    btn.deferReply({ephemeral:true}),
-    getUser(btn.guild.id, btn.user.id),
-  ]);
+  const [, data] = await Promise.all([btn.deferReply({ephemeral:true}), getUser(btn.guild.id, btn.user.id)]);
   if (data.coins<GACHA_PRICE) { await btn.editReply({content:`❌ Il faut **${GACHA_PRICE}🪙** — tu as **${data.coins}🪙**.`}); return; }
+  const {embed, newCoins, role, member, already} = await buildGachaResult(btn.guild, btn.user.id, data.coins);
+  await btn.editReply({content:"✅ Résultat dans ton salon privé !"});
+  await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
+  if (role&&member&&!already) await member.roles.add(role).catch(()=>{});
+  const ch = await tryOpenChannel(btn.guild, `gacha-${btn.user.username}`, btn.user.id);
+  if (ch) await ch.send({content:`<@${btn.user.id}>`, embeds:[embed], components:[buildReplayRow("gacha", 0)]}).catch(()=>{});
+}
+
+async function buildGachaResult(guild:Guild, userId:string, currentCoins:number) {
   const picked = pickGacha();
-  let role = btn.guild.roles.cache.find(r=>r.name===picked.name);
-  if (!role) role = await btn.guild.roles.create({name:picked.name,color:picked.color,permissions:[],reason:"MAI•GESTION gacha"}).catch(()=>undefined);
-  const member = btn.guild.members.cache.get(btn.user.id) ?? await btn.guild.members.fetch(btn.user.id).catch(()=>null) as GuildMember|null;
+  let role = guild.roles.cache.find(r=>r.name===picked.name);
+  if (!role) role = await guild.roles.create({name:picked.name,color:picked.color,permissions:[],reason:"MAI•GESTION gacha"}).catch(()=>undefined);
+  const member = guild.members.cache.get(userId) ?? await guild.members.fetch(userId).catch(()=>null) as GuildMember|null;
   const already = role && member?.roles.cache.has(role.id);
-  const newCoins = data.coins-GACHA_PRICE;
+  const newCoins = currentCoins - GACHA_PRICE;
   const embed = new EmbedBuilder().setColor(RARITY_COLOR[picked.rarity]??0x9b59b6)
     .setTitle(`${picked.emoji} ${picked.rarity} !`)
     .setDescription(already
@@ -236,7 +278,16 @@ async function doGacha(btn:ButtonInteraction) {
       : `🎉 Rôle **${picked.name}** obtenu !\n💰 Solde : **${newCoins.toLocaleString("fr-FR")}🪙**`)
     .addFields({name:"📊 Chances",value:"🎀🌿 55% | ⚡🌸 25% | 💜🔥 12% | 💎🌟 6% | 👑🌌 1.8% | ⚜️ 0.2%"})
     .setFooter({text:"MAI•GESTION"}).setTimestamp();
-  await btn.editReply({embeds:[embed]});
+  return {embed, newCoins, role, member, already};
+}
+
+async function replayGacha(btn:ButtonInteraction) {
+  if (!btn.guild) return;
+  await btn.deferUpdate();
+  const data = await getUser(btn.guild.id, btn.user.id);
+  if (data.coins<GACHA_PRICE) { await btn.editReply({content:`❌ Il faut **${GACHA_PRICE}🪙** — tu as **${data.coins}🪙**.`, embeds:[], components:[]}); return; }
+  const {embed, newCoins, role, member, already} = await buildGachaResult(btn.guild, btn.user.id, data.coins);
+  await btn.editReply({embeds:[embed], components:[buildReplayRow("gacha", 0)]});
   await saveUser(btn.guild.id, btn.user.id, {...data, coins:newCoins}).catch(()=>{});
   if (role&&member&&!already) await member.roles.add(role).catch(()=>{});
 }
@@ -264,20 +315,57 @@ export async function handleDuelSelect(sel:UserSelectMenuInteraction) {
   if (!target||target.user.bot) { await sel.reply({content:"❌ Membre invalide.",ephemeral:true}); return; }
   const cData = await getUser(sel.guild.id, sel.user.id);
   if (cData.coins<bet) { await sel.reply({content:`❌ Solde insuffisant.`,ephemeral:true}); return; }
+
   duels.set(`${sel.guild.id}:${tid}`,{challengerId:sel.user.id,bet});
-  const jeux = sel.guild.channels.cache.find(c=>c.type===ChannelType.GuildText&&(c.name.includes("jeux")||c.name.includes("👾"))) as TextChannel|undefined;
+  setTimeout(()=>duels.delete(`${sel.guild!.id}:${tid}`),60_000);
+
+  // Créer un salon privé pour les deux joueurs
+  const duelCh = await tryOpenChannel(sel.guild, `duel-${sel.user.username}-vs-${target.user.username}`, sel.user.id, tid);
+
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder().setCustomId(`g_duel_accept:${tid}:${bet}`).setLabel("✅ Accepter").setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`g_duel_refuse:${tid}`).setLabel("❌ Refuser").setStyle(ButtonStyle.Danger),
   );
-  if (jeux) await jeux.send({content:`<@${tid}>`,embeds:[new EmbedBuilder().setColor(0xff4444).setTitle("🎲 Défi Duel !").setDescription(`<@${sel.user.id}> te défie pour **${bet}🪙** !\nGagnant → **${bet*2}🪙** !`).setFooter({text:"MAI•GESTION • 60s pour répondre"}).setTimestamp()],components:[row]});
-  setTimeout(()=>duels.delete(`${sel.guild!.id}:${tid}`),60_000);
-  await sel.reply({content:`✅ Défi envoyé à **${target.displayName}** !`,ephemeral:true});
+
+  const challengeEmbed = new EmbedBuilder().setColor(0xff4444).setTitle("🎲 Défi Duel !")
+    .setDescription(`<@${sel.user.id}> défie <@${tid}> pour **${bet}🪙** !\n🏆 Gagnant → **${bet*2}🪙** !`)
+    .addFields({name:"⏳ Expiration","value":"60 secondes pour répondre"})
+    .setFooter({text:"MAI•GESTION"}).setTimestamp();
+
+  if (duelCh) {
+    await duelCh.send({content:`<@${sel.user.id}> <@${tid}>`, embeds:[challengeEmbed], components:[row]}).catch(()=>{});
+    await sel.reply({content:`✅ Défi envoyé ! Rejoins le salon <#${duelCh.id}>`,ephemeral:true});
+  } else {
+    // Fallback: envoyer dans #jeux
+    const jeux = sel.guild.channels.cache.find(c=>c.type===ChannelType.GuildText&&(c.name.includes("jeux")||c.name.includes("👾"))) as TextChannel|undefined;
+    if (jeux) await jeux.send({content:`<@${tid}>`, embeds:[challengeEmbed], components:[row]});
+    await sel.reply({content:`✅ Défi envoyé à **${target.displayName}** !`,ephemeral:true});
+  }
+}
+
+// ── Fermer le salon ───────────────────────────────────────────────────────────
+async function handleCloseChan(btn:ButtonInteraction) {
+  const ch = btn.channel as TextChannel;
+  await btn.reply({content:"🔒 Fermeture du salon dans 3 secondes…", ephemeral:false}).catch(()=>{});
+  await new Promise(r=>setTimeout(r,3000));
+  await ch.delete().catch(()=>{});
 }
 
 // ── Routeur principal ─────────────────────────────────────────────────────────
 export async function handleGameButton(btn:ButtonInteraction) {
   const id = btn.customId;
+
+  // Fermer le salon
+  if (id==="g_close_chan") return handleCloseChan(btn);
+
+  // Rejouer depuis le salon privé
+  if (id.startsWith("g_replay_flip_")) return replayFlip(btn, parseInt(id.split("_")[3]!));
+  if (id.startsWith("g_replay_slot_")) return replaySlots(btn, parseInt(id.split("_")[3]!));
+  if (id.startsWith("g_replay_bj_"))   return replayBJ(btn, parseInt(id.split("_")[3]!));
+  if (id==="g_replay_gacha")           return replayGacha(btn);
+  if (id.startsWith("g_replay_duel_")) return doDuelReplay(btn, parseInt(id.split("_")[3]!));
+
+  // Nouveau jeu depuis le panel
   if (id.startsWith("g_flip_")) return doFlip(btn, parseInt(id.split("_")[2]!));
   if (id.startsWith("g_slot_")) return doSlots(btn, parseInt(id.split("_")[2]!));
   if (id.startsWith("g_bj_"))   return doBJ(btn, parseInt(id.split("_")[2]!));
@@ -298,14 +386,18 @@ export async function handleGameButton(btn:ButtonInteraction) {
     const cWins = Math.random()<0.5;
     const [wId,lId] = cWins?[duel.challengerId,tid!]:[tid!,duel.challengerId];
     const [wData,lData] = cWins?[cData,tData]:[tData,cData];
-    const embed = new EmbedBuilder().setColor(0xffd700).setTitle("🎲 Duel terminé !")
-      .setDescription(`🏆 <@${wId}> remporte **${bet*2}🪙** !\n😔 <@${lId}> perd **${bet}🪙**`)
-      .setFooter({text:"MAI•GESTION"}).setTimestamp();
     await Promise.all([
       saveUser(btn.guild.id,wId,{...wData,coins:wData.coins+bet}),
       saveUser(btn.guild.id,lId,{...lData,coins:Math.max(0,lData.coins-bet)}),
     ]).catch(()=>{});
-    await btn.update({embeds:[embed],components:[]});
+    const embed = new EmbedBuilder().setColor(0xffd700).setTitle("🎲 Duel terminé !")
+      .setDescription(`🏆 <@${wId}> remporte **${bet*2}🪙** !\n😔 <@${lId}> perd **${bet}🪙**`)
+      .setFooter({text:"MAI•GESTION"}).setTimestamp();
+    const replayRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`g_replay_duel_${bet}`).setLabel(`🔁 Rejouer (${bet}🪙)`).setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("g_close_chan").setLabel("🔒 Fermer le salon").setStyle(ButtonStyle.Secondary),
+    );
+    await btn.update({embeds:[embed], components:[replayRow]});
     return;
   }
 
@@ -314,6 +406,26 @@ export async function handleGameButton(btn:ButtonInteraction) {
     const tid = id.split(":")[1]!;
     if (btn.user.id!==tid) { await btn.reply({content:"❌ Ce défi n'est pas pour toi !",ephemeral:true}); return; }
     if (btn.guild) duels.delete(`${btn.guild.id}:${tid}`);
-    await btn.update({embeds:[new EmbedBuilder().setColor(0x888888).setDescription(`❌ **${btn.user.displayName}** a refusé le défi.`).setTimestamp()],components:[]});
+    const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId("g_close_chan").setLabel("🔒 Fermer le salon").setStyle(ButtonStyle.Secondary),
+    );
+    await btn.update({
+      embeds:[new EmbedBuilder().setColor(0x888888).setDescription(`❌ **${btn.user.displayName}** a refusé le défi.`).setTimestamp()],
+      components:[closeRow],
+    });
   }
+}
+
+// ── Rejouer Duel depuis le salon privé ────────────────────────────────────────
+async function doDuelReplay(btn:ButtonInteraction, bet:number) {
+  if (!btn.guild) return;
+  const data = await getUser(btn.guild.id, btn.user.id);
+  if (data.coins<bet) { await btn.reply({content:`❌ Solde insuffisant — **${data.coins}🪙** / besoin **${bet}🪙**.`,ephemeral:true}); return; }
+  await btn.reply({
+    embeds:[new EmbedBuilder().setColor(0xff4444).setTitle("🎲 Duel 1v1 — Nouvelle partie").setDescription(`Tu mises **${bet}🪙**. Choisis ton adversaire !`).setFooter({text:"MAI•GESTION"}).setTimestamp()],
+    components:[new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+      new UserSelectMenuBuilder().setCustomId(`g_duel_pick:${bet}`).setPlaceholder("Choisis ton adversaire…").setMinValues(1).setMaxValues(1)
+    )],
+    ephemeral:true,
+  });
 }
