@@ -9,11 +9,11 @@
   },
   "dependencies": {
     "discord.js": "^14.16.3",
-    "postgres": "^3.4.4"
+    "postgres": "^3.4.4",
+    "tsx": "^4.19.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   },
   "engines": { "node": ">=20" }
